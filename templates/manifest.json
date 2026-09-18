@@ -1,0 +1,114 @@
+[
+  {
+    "src": "coderabbit/.coderabbit.yaml",
+    "dest": ".coderabbit.yaml",
+    "set": "coderabbit",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "boot/.github/dependabot.yml",
+    "dest": ".github/dependabot.yml",
+    "set": "boot",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "boot/.github/pull_request_template.md",
+    "dest": ".github/pull_request_template.md",
+    "set": "boot",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "ruleset/.github/rulesets/main.json",
+    "dest": ".github/rulesets/main.json",
+    "set": "ruleset",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "audit-deps/.github/workflows/audit.yml",
+    "dest": ".github/workflows/audit.yml",
+    "set": "audit-deps",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "boot/.github/workflows/ci.yml",
+    "dest": ".github/workflows/ci.yml",
+    "set": "boot",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "finish/.github/workflows/ci.yml",
+    "dest": ".github/workflows/ci.yml",
+    "set": "finish",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "codeql/.github/workflows/codeql.yml",
+    "dest": ".github/workflows/codeql.yml",
+    "set": "codeql",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "dependabot-automerge/.github/workflows/dependabot-auto-merge.yml",
+    "dest": ".github/workflows/dependabot-auto-merge.yml",
+    "set": "dependabot-automerge",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "scorecard/.github/workflows/scorecard.yml",
+    "dest": ".github/workflows/scorecard.yml",
+    "set": "scorecard",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "boot/.gitignore",
+    "dest": ".gitignore",
+    "set": "boot",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "boot/.pre-commit-config.yaml",
+    "dest": ".pre-commit-config.yaml",
+    "set": "boot",
+    "when": null,
+    "vars": [],
+    "rules": []
+  },
+  {
+    "src": "boot/pyproject.toml",
+    "dest": "pyproject.toml",
+    "set": "boot",
+    "when": null,
+    "vars": ["NAME"],
+    "rules": []
+  },
+  {
+    "src": "finish/pyproject.toml",
+    "dest": "pyproject.toml",
+    "set": "finish",
+    "when": null,
+    "vars": ["NAME"],
+    "rules": []
+  }
+]

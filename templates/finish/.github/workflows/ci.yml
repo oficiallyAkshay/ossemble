@@ -1,0 +1,135 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+# A second push to a pull request supersedes the first, so cancel the run it
+# replaced. Pushes to main key on the commit instead, so a rapid second push
+# gets its own group rather than dropping the first push's run.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # One runner for everything that reads the tree without running the test
+  # suite: hooks and secrets over the whole history.
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # gitleaks reads pull request metadata to report what it finds.
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # gitleaks scans the whole history, not the working tree.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+      # The actionlint hook is built from Go source on first use. The hook
+      # cache is keyed on the config, so a bump rebuilds it once.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: uv sync
+
+      # The same hooks contributors run locally, so CI and the pre-commit
+      # config cannot drift: ruff, actionlint and zizmor. gitleaks's own
+      # pre-commit hook only sees staged files; the secrets scan step below
+      # covers the full history a hook cannot see.
+      - name: pre-commit hooks
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+      # pinact has no pre-commit hook of its own to pin to, so it runs as its
+      # own step: every `uses:` must be a full commit SHA, and that SHA must
+      # actually be the commit the trailing version comment names. fix:
+      # "false" only checks; it never rewrites a workflow file.
+      - name: verify actions are pinned
+        uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a # v3.0.0
+        with:
+          fix: "false"
+          verify: "true"
+
+      - name: secrets scan
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The declared floor (3.11), the version ubuntu-24.04's own python3
+  # resolves to (3.12), and the newest release (3.14) all run to completion,
+  # on every push and every pull request, so a version-specific failure is
+  # visible before it reaches anyone building on this skill.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Codecov uploads with an OIDC token rather than a repository secret.
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history for diff-cover's merge base.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+      - run: uv sync
+      - run: uv run pytest --cov --cov-report=xml --cov-report=term-missing
+
+      # One report per run, so only the newest leg uploads. The upload is
+      # tokenless: it authenticates with the job's OIDC identity, which
+      # Codecov accepts from a public repository. A Codecov outage must not
+      # block a merge, so the step reports and moves on.
+      - name: upload coverage
+        if: matrix.python-version == '3.14'
+        uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
+        with:
+          use_oidc: true
+          files: coverage.xml
+          fail_ci_if_error: false
+
+      # One run is enough: diff-cover's result does not vary by interpreter.
+      # origin/main is already local, fetched in full by the checkout step
+      # above, so no second fetch is needed here.
+      - name: diff coverage
+        if: matrix.python-version == '3.14' && github.event_name == 'pull_request'
+        run: uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=100
+
+  # The one context the branch ruleset requires. It exists on every run and
+  # is the only job name the ruleset needs to know.
+  ci:
+    needs: [checks, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: gate
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [ "${result}" != "success" ]; then
+              echo "a required job did not succeed" >&2
+              exit 1
+            fi
+          done
