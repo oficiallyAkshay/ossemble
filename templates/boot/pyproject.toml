@@ -1,0 +1,39 @@
+[project]
+name = "{{NAME}}"
+version = "0.1.0"
+requires-python = ">=3.11"
+# Standard library only: the skill's script runs wherever the agent runs,
+# nothing to resolve.
+dependencies = []
+
+[tool.uv]
+# {{NAME}} is an agent skill, not a built or published package; uv sync has
+# nothing to build, so it must not require a build backend.
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pre-commit==4.6.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# select = ["ALL"] lands at the finish stage; the build stage runs ruff's
+# default rule set only.
+
+[tool.coverage.run]
+branch = true
+source = ["scripts/{{NAME}}"]
+
+[tool.coverage.report]
+# Build-stage floor, rises to 100 at the finish stage.
+fail_under = 70
