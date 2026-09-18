@@ -1,0 +1,26 @@
+# The same hooks CI runs, run there through pre-commit like these. Ruff's
+# version matches clonometer's pin; gitleaks, actionlint and zizmor are
+# standalone tools pre-commit installs on its own and have no
+# pyproject.toml pin to match.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v1.30.1
+    hooks:
+      - id: zizmor
