@@ -1,10 +1,58 @@
-"""Tests for the `ossemble audit` subcommand stub."""
+"""Tests for the `ossemble audit` subcommand.
+
+Each probe gets one repo where the rule holds and one where it does not.
+Filesystem probes are called directly against a small temp-dir repo;
+`gh api` probes are called against a `facts` dict built by hand, since
+`audit._gh_api` is the only network-shaped call and tests never touch it.
+"""
 
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
+from pathlib import Path
 
 from scripts.ossemble import audit
+
+BASE_FACTS = {
+    "has_workflows": False,
+    "language": None,
+    "shape": None,
+    "public": None,
+    "stage": "build",
+    "repo_settings": None,
+    "ruleset": None,
+}
+
+
+def facts(**overrides) -> dict:
+    return {**BASE_FACTS, **overrides}
+
+
+def write(root: Path, relative: str, content: str) -> Path:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def workflow(root: Path, content: str, name: str = "ci.yml") -> Path:
+    return write(root, f".github/workflows/{name}", content)
+
+
+def init_git_repo(
+    root: Path, author_email: str = "154273+octocat@users.noreply.github.com"
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", author_email], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "octocat"], cwd=root, check=True)
+    write(root, "README.md", "# repo\n")
+    subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "Add the README"], cwd=root, check=True)
+
+
+# --------------------------------------------------------- add_parser / run
 
 
 def test_add_parser_registers_the_audit_subcommand_and_wires_it_to_run() -> None:
@@ -16,12 +64,1139 @@ def test_add_parser_registers_the_audit_subcommand_and_wires_it_to_run() -> None
 
     assert args.subcommand == "audit"
     assert args.run is audit.run
+    assert args.path == "."
+    assert args.as_json is False
+    assert args.api is False
 
 
-def test_run_prints_the_not_built_yet_message_to_stderr_and_returns_one(capsys) -> None:
-    exit_code = audit.run(argparse.Namespace())
+def test_run_returns_one_and_prints_one_line_when_the_path_is_not_a_directory(capsys) -> None:
+    exit_code = audit.run(argparse.Namespace(path="/no/such/path", as_json=False, api=False))
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert captured.err == "ossemble audit: not built yet\n"
+    assert captured.err.strip() == "ossemble audit: /no/such/path is not a directory"
+
+
+def test_run_refuses_to_follow_a_symlink_as_the_target_path(tmp_path, capsys) -> None:
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real_dir)
+
+    exit_code = audit.run(argparse.Namespace(path=str(link), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "symlink" in captured.err
+
+
+def test_run_returns_one_when_rules_json_is_missing(tmp_path, capsys) -> None:
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "no rules/rules.json" in captured.err
+
+
+def test_run_returns_one_when_rules_json_is_not_valid_json(tmp_path, capsys) -> None:
+    write(tmp_path, "rules/rules.json", "not json")
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "cannot read rules/rules.json" in captured.err
+
+
+def test_run_returns_one_and_names_the_rule_when_a_probe_is_unknown(tmp_path, capsys) -> None:
+    write(
+        tmp_path,
+        "rules/rules.json",
+        json.dumps(
+            [
+                {
+                    "id": "ZZ-001",
+                    "text": "made up",
+                    "basis": "test",
+                    "category": "made up",
+                    "kind": "default",
+                    "stage": "build",
+                    "check": "audit",
+                    "probe": "nonexistent_probe",
+                }
+            ]
+        ),
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "ZZ-001" in captured.err
+    assert "nonexistent_probe" in captured.err
+
+
+def _rule(**overrides) -> dict:
+    rule = {
+        "id": "STR-001",
+        "text": "stdlib only",
+        "basis": "test",
+        "category": "structure and leanness",
+        "kind": "default",
+        "stage": "build",
+        "check": "audit",
+        "probe": "stdlib_only_runtime_dependencies",
+    }
+    rule.update(overrides)
+    return rule
+
+
+def test_run_prints_a_gap_row_and_returns_one_when_a_default_rule_fails(tmp_path, capsys) -> None:
+    write(tmp_path, "rules/rules.json", json.dumps([_rule()]))
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert (
+        captured.out.strip()
+        == "STR-001  default  build  pyproject.toml  [project] dependencies is not empty: ['requests']"
+    )
+
+
+def test_run_prints_nothing_and_returns_zero_when_every_rule_passes(tmp_path, capsys) -> None:
+    write(tmp_path, "rules/rules.json", json.dumps([_rule()]))
+    write(tmp_path, "pyproject.toml", "[project]\ndependencies = []\n")
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
     assert captured.out == ""
+
+
+def test_run_json_prints_a_sorted_list_of_gap_objects(tmp_path, capsys) -> None:
+    write(tmp_path, "rules/rules.json", json.dumps([_rule()]))
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=True, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    rows = json.loads(captured.out)
+    assert rows == [
+        {
+            "id": "STR-001",
+            "kind": "default",
+            "stage": "build",
+            "file": "pyproject.toml",
+            "message": "[project] dependencies is not empty: ['requests']",
+        }
+    ]
+
+
+def test_run_prints_a_failing_recommendation_under_its_own_heading_without_changing_the_exit_code(
+    tmp_path, capsys
+) -> None:
+    write(
+        tmp_path,
+        "rules/rules.json",
+        json.dumps([_rule(id="DST-777", kind="recommendation")]),
+    )
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    lines = captured.out.strip().splitlines()
+    assert lines[0] == "Recommendations"
+    assert lines[1].startswith("DST-777  recommendation")
+
+
+def test_run_skips_a_rule_whose_when_condition_is_not_met(tmp_path, capsys) -> None:
+    write(
+        tmp_path,
+        "rules/rules.json",
+        json.dumps([_rule(when={"has_workflows": True})]),
+    )
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == ""
+
+
+def test_run_skips_a_finish_stage_rule_while_the_repo_is_still_at_the_build_stage(
+    tmp_path, capsys
+) -> None:
+    write(
+        tmp_path,
+        "rules/rules.json",
+        json.dumps([_rule(stage="finish")]),
+    )
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[project]\ndependencies = ["requests"]\n\n[tool.coverage.report]\nfail_under = 70\n',
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == ""
+
+
+def test_run_evaluates_a_finish_stage_rule_once_the_coverage_floor_reaches_100(
+    tmp_path, capsys
+) -> None:
+    write(
+        tmp_path,
+        "rules/rules.json",
+        json.dumps([_rule(stage="finish")]),
+    )
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[project]\ndependencies = ["requests"]\n\n[tool.coverage.report]\nfail_under = 100\n',
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    assert exit_code == 1
+
+
+def test_run_skips_an_api_rule_when_the_api_flag_is_not_given(tmp_path, capsys) -> None:
+    write(
+        tmp_path,
+        "rules/rules.json",
+        json.dumps([_rule(check="api", probe="auto_merge_and_delete_branch_enabled")]),
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == ""
+
+
+def test_run_evaluates_an_api_rule_when_the_api_flag_is_given(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    write(
+        tmp_path,
+        "rules/rules.json",
+        json.dumps([_rule(check="api", probe="auto_merge_and_delete_branch_enabled")]),
+    )
+    monkeypatch.setattr(
+        audit,
+        "_gh_api",
+        lambda path: (
+            {"allow_auto_merge": False}
+            if path.startswith("repos/") and "rulesets" not in path
+            else []
+        ),
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=True))
+
+    assert exit_code == 1
+
+
+# ------------------------------------------------------------------- facts
+
+
+def test_applies_returns_true_when_no_when_conditions_are_given() -> None:
+    assert audit._applies({}, facts()) is True
+
+
+def test_applies_returns_false_when_a_when_condition_does_not_match_the_facts() -> None:
+    assert audit._applies({"public": True}, facts(public=False)) is False
+
+
+def test_has_workflows_is_false_when_the_workflows_directory_is_absent(tmp_path) -> None:
+    assert audit._has_workflows(tmp_path) is False
+
+
+def test_has_workflows_is_true_when_a_workflow_file_exists(tmp_path) -> None:
+    workflow(tmp_path, "name: ci\n")
+    assert audit._has_workflows(tmp_path) is True
+
+
+def test_workflow_files_skips_a_symlinked_workflow(tmp_path) -> None:
+    real = workflow(tmp_path, "name: ci\n")
+    link = tmp_path / ".github" / "workflows" / "link.yml"
+    link.symlink_to(real)
+
+    files = audit._workflow_files(tmp_path)
+
+    assert files == [real]
+
+
+def test_stage_is_build_when_pyproject_toml_is_missing(tmp_path) -> None:
+    assert audit._stage(tmp_path) == "build"
+
+
+def test_stage_is_finish_once_the_coverage_floor_reaches_100(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", "[tool.coverage.report]\nfail_under = 100\n")
+    assert audit._stage(tmp_path) == "finish"
+
+
+def test_stage_is_build_below_the_coverage_floor_of_100(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", "[tool.coverage.report]\nfail_under = 99\n")
+    assert audit._stage(tmp_path) == "build"
+
+
+def test_load_toml_returns_none_for_a_symlink(tmp_path) -> None:
+    real = write(tmp_path, "real.toml", "a = 1\n")
+    link = tmp_path / "link.toml"
+    link.symlink_to(real)
+    assert audit._load_toml(link) is None
+
+
+def test_load_toml_returns_none_for_invalid_toml(tmp_path) -> None:
+    path = write(tmp_path, "bad.toml", "not = [valid")
+    assert audit._load_toml(path) is None
+
+
+def test_load_json_returns_none_when_the_file_is_missing(tmp_path) -> None:
+    assert audit._load_json(tmp_path / "missing.json") is None
+
+
+def test_load_json_returns_none_for_invalid_json(tmp_path) -> None:
+    path = write(tmp_path, "bad.json", "not json")
+    assert audit._load_json(path) is None
+
+
+def test_read_text_returns_none_when_the_file_is_missing(tmp_path) -> None:
+    assert audit._read_text(tmp_path / "missing.txt") is None
+
+
+def test_jobs_returns_an_empty_mapping_when_there_is_no_jobs_key() -> None:
+    assert audit._jobs("name: ci\n") == {}
+
+
+def test_jobs_splits_the_text_by_top_level_job_name() -> None:
+    text = "jobs:\n  a:\n    runs-on: ubuntu-latest\n  b:\n    runs-on: ubuntu-latest\n"
+    jobs = audit._jobs(text)
+    assert set(jobs) == {"a", "b"}
+    assert "runs-on: ubuntu-latest" in jobs["a"]
+
+
+def test_remote_owner_repo_returns_none_when_there_is_no_git_remote(tmp_path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert audit._remote_owner_repo(tmp_path) is None
+
+
+def test_remote_owner_repo_parses_a_github_https_remote(tmp_path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+    assert audit._remote_owner_repo(tmp_path) == "an-owner/a-repo"
+
+
+def test_gather_facts_leaves_public_and_settings_unset_without_the_api_flag(tmp_path) -> None:
+    result = audit._gather_facts(tmp_path, use_api=False)
+    assert result["public"] is None
+    assert result["repo_settings"] is None
+    assert result["ruleset"] is None
+
+
+def test_gather_facts_reads_repo_settings_and_the_main_ruleset_with_the_api_flag(
+    tmp_path, monkeypatch
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def fake_gh_api(path):
+        if path == "repos/an-owner/a-repo":
+            return {"private": False}
+        if path == "repos/an-owner/a-repo/rulesets":
+            return [{"id": 1, "name": "main"}]
+        if path == "repos/an-owner/a-repo/rulesets/1":
+            return {"enforcement": "active"}
+        raise AssertionError(f"unexpected path {path}")
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+
+    result = audit._gather_facts(tmp_path, use_api=True)
+
+    assert result["public"] is True
+    assert result["repo_settings"] == {"private": False}
+    assert result["ruleset"] == {"enforcement": "active"}
+
+
+def test_gather_facts_tolerates_a_failing_gh_api_call(tmp_path, monkeypatch) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def fake_gh_api(path):
+        raise RuntimeError("gh: not authenticated")
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+
+    result = audit._gather_facts(tmp_path, use_api=True)
+
+    assert result["repo_settings"] is None
+    assert result["ruleset"] is None
+
+
+# ------------------------------------------------------------------- probes
+
+
+def test_stdlib_only_runtime_dependencies_passes_when_the_dependency_list_is_empty(
+    tmp_path,
+) -> None:
+    write(tmp_path, "pyproject.toml", "[project]\ndependencies = []\n")
+    assert audit.stdlib_only_runtime_dependencies(tmp_path, facts()) is None
+
+
+def test_stdlib_only_runtime_dependencies_fails_when_a_dependency_is_listed(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+    assert audit.stdlib_only_runtime_dependencies(tmp_path, facts()) is not None
+
+
+def test_dev_tooling_in_dependency_group_passes_with_a_dev_group_and_no_build_backend(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[dependency-groups]\ndev = ["pytest"]\n\n[tool.uv]\npackage = false\n',
+    )
+    assert audit.dev_tooling_in_dependency_group(tmp_path, facts()) is None
+
+
+def test_dev_tooling_in_dependency_group_fails_without_a_dev_group(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", "[tool.uv]\npackage = false\n")
+    assert audit.dev_tooling_in_dependency_group(tmp_path, facts()) is not None
+
+
+def test_docs_under_300_lines_passes_for_a_short_readme(tmp_path) -> None:
+    write(tmp_path, "README.md", "one line\n")
+    assert audit.docs_under_300_lines(tmp_path, facts()) is None
+
+
+def test_docs_under_300_lines_fails_for_a_long_readme(tmp_path) -> None:
+    write(tmp_path, "README.md", "\n".join(f"line {n}" for n in range(400)))
+    assert audit.docs_under_300_lines(tmp_path, facts()) is not None
+
+
+def test_repo_under_250kb_passes_for_a_small_tree(tmp_path) -> None:
+    write(tmp_path, "README.md", "small\n")
+    assert audit.repo_under_250kb(tmp_path, facts()) is None
+
+
+def test_repo_under_250kb_fails_for_a_large_tree(tmp_path) -> None:
+    write(tmp_path, "big.bin", "x" * 260_000)
+    assert audit.repo_under_250kb(tmp_path, facts()) is not None
+
+
+def test_leanness_tool_never_wired_into_ci_passes_without_ponytail(tmp_path) -> None:
+    workflow(tmp_path, "name: ci\njobs:\n  test:\n    runs-on: ubuntu-latest\n")
+    assert audit.leanness_tool_never_wired_into_ci(tmp_path, facts()) is None
+
+
+def test_leanness_tool_never_wired_into_ci_fails_when_a_workflow_mentions_ponytail(
+    tmp_path,
+) -> None:
+    workflow(tmp_path, "name: ci\njobs:\n  lean:\n    steps:\n      - run: ponytail --check\n")
+    assert audit.leanness_tool_never_wired_into_ci(tmp_path, facts()) is not None
+
+
+def test_workflow_top_level_permissions_empty_passes_when_declared(tmp_path) -> None:
+    workflow(tmp_path, "name: ci\npermissions: {}\njobs: {}\n")
+    assert audit.workflow_top_level_permissions_empty(tmp_path, facts()) is None
+
+
+def test_workflow_top_level_permissions_empty_fails_when_missing(tmp_path) -> None:
+    workflow(tmp_path, "name: ci\njobs: {}\n")
+    assert audit.workflow_top_level_permissions_empty(tmp_path, facts()) is not None
+
+
+GOOD_JOB = "jobs:\n  build:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    permissions:\n      contents: read\n"
+
+
+def test_job_level_permissions_declared_passes_when_every_job_has_one(tmp_path) -> None:
+    workflow(tmp_path, GOOD_JOB)
+    assert audit.job_level_permissions_declared(tmp_path, facts()) is None
+
+
+def test_job_level_permissions_declared_fails_when_a_job_has_none(tmp_path) -> None:
+    workflow(tmp_path, "jobs:\n  build:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n")
+    assert audit.job_level_permissions_declared(tmp_path, facts()) is not None
+
+
+def test_job_timeout_minutes_set_passes_when_every_job_has_one(tmp_path) -> None:
+    workflow(tmp_path, GOOD_JOB)
+    assert audit.job_timeout_minutes_set(tmp_path, facts()) is None
+
+
+def test_job_timeout_minutes_set_fails_when_a_job_has_none(tmp_path) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n",
+    )
+    assert audit.job_timeout_minutes_set(tmp_path, facts()) is not None
+
+
+CHECKOUT_GOOD = (
+    "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@"
+    "3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          persist-credentials: false\n"
+)
+CHECKOUT_BAD = (
+    "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@"
+    "3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+)
+
+
+def test_checkout_persist_credentials_false_passes_when_set(tmp_path) -> None:
+    workflow(tmp_path, CHECKOUT_GOOD)
+    assert audit.checkout_persist_credentials_false(tmp_path, facts()) is None
+
+
+def test_checkout_persist_credentials_false_fails_when_missing(tmp_path) -> None:
+    workflow(tmp_path, CHECKOUT_BAD)
+    assert audit.checkout_persist_credentials_false(tmp_path, facts()) is not None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_passes_for_a_pinned_action(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_fails_for_a_tag_pin(tmp_path) -> None:
+    workflow(tmp_path, "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n")
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is not None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_ignores_uses_mentioned_in_a_comment(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "# every `uses:` must be a full commit SHA\n"
+        "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+def test_no_expression_interpolation_in_run_steps_passes_when_env_carries_the_value(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        'jobs:\n  build:\n    steps:\n      - env:\n          VALUE: ${{ github.sha }}\n        run: echo "$VALUE"\n',
+    )
+    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts()) is None
+
+
+def test_no_expression_interpolation_in_run_steps_fails_when_run_interpolates_directly(
+    tmp_path,
+) -> None:
+    workflow(tmp_path, 'jobs:\n  build:\n    steps:\n      - run: echo "${{ github.sha }}"\n')
+    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts()) is not None
+
+
+def test_secrets_scan_configured_over_full_history_passes_with_gitleaks_and_full_history(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/gitleaks/gitleaks\n",
+    )
+    workflow(
+        tmp_path,
+        "jobs:\n  checks:\n    steps:\n      - uses: gitleaks/gitleaks-action@x\n        with:\n          fetch-depth: 0\n",
+    )
+    assert audit.secrets_scan_configured_over_full_history(tmp_path, facts()) is None
+
+
+def test_secrets_scan_configured_over_full_history_fails_without_a_gitleaks_hook(tmp_path) -> None:
+    write(
+        tmp_path,
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/astral-sh/ruff-pre-commit\n",
+    )
+    assert audit.secrets_scan_configured_over_full_history(tmp_path, facts()) is not None
+
+
+DEPENDABOT_GOOD = (
+    "version: 2\nupdates:\n"
+    '  - package-ecosystem: "github-actions"\n    schedule:\n      interval: "weekly"\n'
+    '    cooldown:\n      default-days: 7\n    groups:\n      actions:\n        patterns: ["*"]\n'
+    '  - package-ecosystem: "pip"\n    schedule:\n      interval: "weekly"\n'
+    '    cooldown:\n      default-days: 7\n    groups:\n      python:\n        patterns: ["*"]\n'
+)
+
+
+def test_dependabot_grouped_weekly_with_cooldown_passes_for_a_well_formed_config(tmp_path) -> None:
+    write(tmp_path, ".github/dependabot.yml", DEPENDABOT_GOOD)
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_fails_when_the_file_is_missing(tmp_path) -> None:
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is not None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_fails_for_an_ecosystem_outside_the_allowed_set(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        ".github/dependabot.yml",
+        DEPENDABOT_GOOD.replace('package-ecosystem: "pip"', 'package-ecosystem: "npm"'),
+    )
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is not None
+
+
+RUFF_GOOD = (
+    "[tool.ruff.lint]\n"
+    'select = ["ALL"]\n'
+    'ignore = [\n    "COM812",  # formatter owns trailing commas\n]\n\n'
+    "[tool.ruff.lint.per-file-ignores]\n"
+    '"tests/*" = ["S101"]\n'
+)
+
+
+def test_ruff_select_all_with_ignores_justified_passes_for_a_well_commented_config(
+    tmp_path,
+) -> None:
+    write(tmp_path, "pyproject.toml", RUFF_GOOD)
+    assert audit.ruff_select_all_with_ignores_justified(tmp_path, facts()) is None
+
+
+def test_ruff_select_all_with_ignores_justified_fails_when_select_is_not_all(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", '[tool.ruff.lint]\nselect = ["E"]\n')
+    assert audit.ruff_select_all_with_ignores_justified(tmp_path, facts()) is not None
+
+
+def test_ruff_select_all_with_ignores_justified_fails_for_an_uncommented_ignore(tmp_path) -> None:
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[tool.ruff.lint]\nselect = ["ALL"]\nignore = [\n    "COM812",\n]\n',
+    )
+    assert audit.ruff_select_all_with_ignores_justified(tmp_path, facts()) is not None
+
+
+def test_ruff_select_all_with_ignores_justified_fails_for_a_security_ignore_outside_tests(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[tool.ruff.lint]\nselect = ["ALL"]\n\n[tool.ruff.lint.per-file-ignores]\n"scripts/*" = ["S101"]\n',
+    )
+    assert audit.ruff_select_all_with_ignores_justified(tmp_path, facts()) is not None
+
+
+CONCURRENCY_GOOD = (
+    "concurrency:\n"
+    "  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}\n"
+    "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
+    "jobs: {}\n"
+)
+
+
+def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_passes_for_the_standard_shape(
+    tmp_path,
+) -> None:
+    workflow(tmp_path, CONCURRENCY_GOOD)
+    assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is None
+
+
+def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_fails_when_missing(tmp_path) -> None:
+    workflow(tmp_path, "jobs: {}\n")
+    assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is not None
+
+
+CI_GATE_GOOD = (
+    "jobs:\n  ci:\n    needs: [test]\n    if: always()\n    permissions: {}\n"
+    '    steps:\n      - run: |\n          if [ "${R}" != "success" ]; then exit 1; fi\n'
+)
+
+
+def test_ci_gate_job_fails_closed_passes_for_the_standard_gate_job(tmp_path) -> None:
+    workflow(tmp_path, CI_GATE_GOOD)
+    assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is None
+
+
+def test_ci_gate_job_fails_closed_fails_when_there_is_no_always_gate_job(tmp_path) -> None:
+    workflow(tmp_path, "jobs:\n  test:\n    runs-on: ubuntu-latest\n")
+    assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is not None
+
+
+def test_dependency_audit_workflow_separate_and_scheduled_passes_for_a_scheduled_pip_audit(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  schedule:\n    - cron: '0 0 * * 1'\n  pull_request:\n    paths: ['pyproject.toml']\njobs:\n  audit:\n    steps:\n      - run: pip-audit\n",
+        name="pip-audit.yml",
+    )
+    assert audit.dependency_audit_workflow_separate_and_scheduled(tmp_path, facts()) is None
+
+
+def test_dependency_audit_workflow_separate_and_scheduled_fails_when_absent(tmp_path) -> None:
+    workflow(tmp_path, "jobs:\n  test:\n    runs-on: ubuntu-latest\n")
+    assert audit.dependency_audit_workflow_separate_and_scheduled(tmp_path, facts()) is not None
+
+
+def test_diff_cover_runs_on_one_ci_leg_passes_when_a_step_runs_it(tmp_path) -> None:
+    workflow(tmp_path, "jobs:\n  test:\n    steps:\n      - run: diff-cover coverage.xml\n")
+    assert audit.diff_cover_runs_on_one_ci_leg(tmp_path, facts()) is None
+
+
+def test_diff_cover_runs_on_one_ci_leg_fails_when_no_step_runs_it(tmp_path) -> None:
+    workflow(tmp_path, "jobs:\n  test:\n    steps:\n      - run: pytest\n")
+    assert audit.diff_cover_runs_on_one_ci_leg(tmp_path, facts()) is not None
+
+
+def test_full_interpreter_matrix_everywhere_passes_for_an_unconditional_matrix(tmp_path) -> None:
+    workflow(
+        tmp_path,
+        'jobs:\n  test:\n    strategy:\n      matrix:\n        python-version: ["3.11", "3.12", "3.14"]\n',
+    )
+    assert audit.full_interpreter_matrix_everywhere(tmp_path, facts()) is None
+
+
+def test_full_interpreter_matrix_everywhere_fails_when_still_narrowed_on_pull_requests(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  test:\n    strategy:\n      matrix:\n"
+        "        python-version: ${{ github.event_name == 'pull_request' && fromJson('[\"3.12\"]') || fromJson('[\"3.11\"]') }}\n",
+    )
+    assert audit.full_interpreter_matrix_everywhere(tmp_path, facts()) is not None
+
+
+def test_readme_has_no_ci_badge_code_or_workflow_link_before_content_passes_for_a_clean_hero(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        "README.md",
+        "# ossemble\n\nAssembles a finished open-source repo.\n\n## Features\n\nstuff\n",
+    )
+    assert (
+        audit.readme_has_no_ci_badge_code_or_workflow_link_before_content(tmp_path, facts()) is None
+    )
+
+
+def test_readme_has_no_ci_badge_code_or_workflow_link_before_content_fails_for_a_leading_code_block(
+    tmp_path,
+) -> None:
+    write(tmp_path, "README.md", "# ossemble\n\n```\npip install\n```\n\n## Features\n")
+    assert (
+        audit.readme_has_no_ci_badge_code_or_workflow_link_before_content(tmp_path, facts())
+        is not None
+    )
+
+
+def test_readme_headings_are_only_the_fixed_set_passes_for_allowed_headings(tmp_path) -> None:
+    write(tmp_path, "README.md", "# ossemble\n\n## Features\n\n## Security\n")
+    assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is None
+
+
+def test_readme_headings_are_only_the_fixed_set_fails_for_a_forbidden_heading(tmp_path) -> None:
+    write(tmp_path, "README.md", "# ossemble\n\n## Quick start\n")
+    assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is not None
+
+
+def test_readme_security_section_is_never_only_passes_for_a_never_only_checklist(tmp_path) -> None:
+    write(
+        tmp_path,
+        "README.md",
+        "## Security\n\n- Never sends a token to a URL\n- ❌ Never phones home\n",
+    )
+    assert audit.readme_security_section_is_never_only(tmp_path, facts()) is None
+
+
+def test_readme_security_section_is_never_only_fails_when_a_checked_item_appears(tmp_path) -> None:
+    write(tmp_path, "README.md", "## Security\n\n- ✅ Uses a token\n- ❌ Never phones home\n")
+    assert audit.readme_security_section_is_never_only(tmp_path, facts()) is not None
+
+
+def test_no_lockfile_committed_passes_without_a_lockfile(tmp_path) -> None:
+    assert audit.no_lockfile_committed(tmp_path, facts()) is None
+
+
+def test_no_lockfile_committed_fails_when_uv_lock_is_present_outside_a_git_repo(tmp_path) -> None:
+    write(tmp_path, "uv.lock", "")
+    assert audit.no_lockfile_committed(tmp_path, facts()) is not None
+
+
+def test_no_lockfile_committed_passes_when_a_lockfile_exists_but_is_gitignored_and_untracked(
+    tmp_path,
+) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, ".gitignore", "uv.lock\n")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "Ignore uv.lock"], cwd=tmp_path, check=True)
+    write(tmp_path, "uv.lock", "# untracked, local only\n")
+
+    assert audit.no_lockfile_committed(tmp_path, facts()) is None
+
+
+def test_no_lockfile_committed_fails_when_a_lockfile_is_tracked_by_git(tmp_path) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, "uv.lock", "# tracked\n")
+    subprocess.run(["git", "add", "uv.lock"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "Add uv.lock"], cwd=tmp_path, check=True)
+
+    assert audit.no_lockfile_committed(tmp_path, facts()) is not None
+
+
+def test_tracked_files_returns_none_outside_a_git_repo(tmp_path) -> None:
+    assert audit._tracked_files(tmp_path) is None
+
+
+def test_zero_tokens_beyond_builtin_github_token_passes_with_only_the_built_in_token(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - env:\n          T: ${{ secrets.GITHUB_TOKEN }}\n",
+    )
+    assert audit.zero_tokens_beyond_builtin_github_token(tmp_path, facts()) is None
+
+
+def test_zero_tokens_beyond_builtin_github_token_fails_for_another_secret(tmp_path) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - env:\n          T: ${{ secrets.NPM_TOKEN }}\n",
+    )
+    assert audit.zero_tokens_beyond_builtin_github_token(tmp_path, facts()) is not None
+
+
+def test_commit_identity_is_noreply_passes_for_a_noreply_author(tmp_path) -> None:
+    init_git_repo(tmp_path)
+    assert audit.commit_identity_is_noreply(tmp_path, facts()) is None
+
+
+def test_commit_identity_is_noreply_fails_for_a_personal_looking_email(tmp_path) -> None:
+    init_git_repo(tmp_path, author_email="person@example.com")
+    assert audit.commit_identity_is_noreply(tmp_path, facts()) is not None
+
+
+def test_state_file_holds_only_allowed_keys_passes_without_a_state_file(tmp_path) -> None:
+    assert audit.state_file_holds_only_allowed_keys(tmp_path, facts()) is None
+
+
+def test_state_file_holds_only_allowed_keys_fails_for_an_undeclared_key(tmp_path) -> None:
+    write(tmp_path, ".ossemble/state.json", json.dumps({"scope": {}, "mystery": 1}))
+    assert audit.state_file_holds_only_allowed_keys(tmp_path, facts()) is not None
+
+
+def test_no_gate_lowering_left_open_at_finish_stage_passes_without_a_lowered_entry(
+    tmp_path,
+) -> None:
+    write(tmp_path, ".ossemble/state.json", json.dumps({"lowered": []}))
+    assert audit.no_gate_lowering_left_open_at_finish_stage(tmp_path, facts()) is None
+
+
+def test_no_gate_lowering_left_open_at_finish_stage_fails_when_a_gate_is_still_lowered(
+    tmp_path,
+) -> None:
+    write(tmp_path, ".ossemble/state.json", json.dumps({"lowered": [{"gate": "coverage"}]}))
+    assert audit.no_gate_lowering_left_open_at_finish_stage(tmp_path, facts()) is not None
+
+
+def test_no_security_md_passes_when_absent(tmp_path) -> None:
+    assert audit.no_security_md(tmp_path, facts()) is None
+
+
+def test_no_security_md_fails_when_present(tmp_path) -> None:
+    write(tmp_path, "SECURITY.md", "# security\n")
+    assert audit.no_security_md(tmp_path, facts()) is not None
+
+
+def test_coverage_floor_at_least_seventy_passes_at_the_floor(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", "[tool.coverage.report]\nfail_under = 70\n")
+    assert audit.coverage_floor_at_least_seventy(tmp_path, facts()) is None
+
+
+def test_coverage_floor_at_least_seventy_fails_below_the_floor(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", "[tool.coverage.report]\nfail_under = 50\n")
+    assert audit.coverage_floor_at_least_seventy(tmp_path, facts()) is not None
+
+
+def test_coverage_floor_is_100_line_and_branch_passes_at_100_with_branch_on(tmp_path) -> None:
+    write(
+        tmp_path,
+        "pyproject.toml",
+        "[tool.coverage.report]\nfail_under = 100\n\n[tool.coverage.run]\nbranch = true\n",
+    )
+    assert audit.coverage_floor_is_100_line_and_branch(tmp_path, facts()) is None
+
+
+def test_coverage_floor_is_100_line_and_branch_fails_when_branch_coverage_is_off(tmp_path) -> None:
+    write(
+        tmp_path,
+        "pyproject.toml",
+        "[tool.coverage.report]\nfail_under = 100\n\n[tool.coverage.run]\nbranch = false\n",
+    )
+    assert audit.coverage_floor_is_100_line_and_branch(tmp_path, facts()) is not None
+
+
+def test_pragma_no_cover_only_on_main_guard_with_reason_passes_on_a_main_guard(tmp_path) -> None:
+    write(
+        tmp_path,
+        "m.py",
+        'if __name__ == "__main__":  # pragma: no cover -- exercised by running the script\n    pass\n',
+    )
+    assert audit.pragma_no_cover_only_on_main_guard_with_reason(tmp_path, facts()) is None
+
+
+def test_pragma_no_cover_only_on_main_guard_with_reason_fails_outside_a_main_guard(
+    tmp_path,
+) -> None:
+    write(tmp_path, "m.py", "def f():  # pragma: no cover -- unreachable\n    pass\n")
+    assert audit.pragma_no_cover_only_on_main_guard_with_reason(tmp_path, facts()) is not None
+
+
+def test_pragma_no_cover_only_on_main_guard_with_reason_fails_without_a_trailing_reason(
+    tmp_path,
+) -> None:
+    write(tmp_path, "m.py", 'if __name__ == "__main__":  # pragma: no cover\n    pass\n')
+    assert audit.pragma_no_cover_only_on_main_guard_with_reason(tmp_path, facts()) is not None
+
+
+# --------------------------------------------------------------- api probes
+
+
+def test_auto_merge_and_delete_branch_enabled_passes_when_both_are_on(tmp_path) -> None:
+    settings = {"allow_auto_merge": True, "delete_branch_on_merge": True}
+    assert (
+        audit.auto_merge_and_delete_branch_enabled(tmp_path, facts(repo_settings=settings)) is None
+    )
+
+
+def test_auto_merge_and_delete_branch_enabled_fails_when_repo_settings_are_unavailable(
+    tmp_path,
+) -> None:
+    assert audit.auto_merge_and_delete_branch_enabled(tmp_path, facts()) is not None
+
+
+def test_auto_merge_and_delete_branch_enabled_fails_when_delete_branch_is_off(tmp_path) -> None:
+    settings = {"allow_auto_merge": True, "delete_branch_on_merge": False}
+    assert (
+        audit.auto_merge_and_delete_branch_enabled(tmp_path, facts(repo_settings=settings))
+        is not None
+    )
+
+
+def test_merge_strategy_is_rebase_only_passes_for_rebase_only(tmp_path) -> None:
+    settings = {
+        "allow_rebase_merge": True,
+        "allow_squash_merge": False,
+        "allow_merge_commit": False,
+    }
+    assert audit.merge_strategy_is_rebase_only(tmp_path, facts(repo_settings=settings)) is None
+
+
+def test_merge_strategy_is_rebase_only_fails_when_squash_is_also_allowed(tmp_path) -> None:
+    settings = {"allow_rebase_merge": True, "allow_squash_merge": True, "allow_merge_commit": False}
+    assert audit.merge_strategy_is_rebase_only(tmp_path, facts(repo_settings=settings)) is not None
+
+
+def test_wiki_and_projects_disabled_passes_when_both_are_off(tmp_path) -> None:
+    settings = {"has_wiki": False, "has_projects": False}
+    assert audit.wiki_and_projects_disabled(tmp_path, facts(repo_settings=settings)) is None
+
+
+def test_wiki_and_projects_disabled_fails_when_the_wiki_is_on(tmp_path) -> None:
+    settings = {"has_wiki": True, "has_projects": False}
+    assert audit.wiki_and_projects_disabled(tmp_path, facts(repo_settings=settings)) is not None
+
+
+def test_dependabot_alerts_and_security_updates_enabled_passes_when_enabled(tmp_path) -> None:
+    settings = {"security_and_analysis": {"dependabot_security_updates": {"status": "enabled"}}}
+    assert (
+        audit.dependabot_alerts_and_security_updates_enabled(
+            tmp_path, facts(repo_settings=settings)
+        )
+        is None
+    )
+
+
+def test_dependabot_alerts_and_security_updates_enabled_fails_when_disabled(tmp_path) -> None:
+    settings = {"security_and_analysis": {"dependabot_security_updates": {"status": "disabled"}}}
+    assert (
+        audit.dependabot_alerts_and_security_updates_enabled(
+            tmp_path, facts(repo_settings=settings)
+        )
+        is not None
+    )
+
+
+def test_topics_are_set_passes_with_topics(tmp_path) -> None:
+    settings = {"topics": ["skill", "agent"]}
+    assert audit.topics_are_set(tmp_path, facts(repo_settings=settings)) is None
+
+
+def test_topics_are_set_fails_without_topics(tmp_path) -> None:
+    settings = {"topics": []}
+    assert audit.topics_are_set(tmp_path, facts(repo_settings=settings)) is not None
+
+
+def test_secret_scanning_and_push_protection_enabled_passes_when_both_are_on(tmp_path) -> None:
+    settings = {
+        "security_and_analysis": {
+            "secret_scanning": {"status": "enabled"},
+            "secret_scanning_push_protection": {"status": "enabled"},
+        }
+    }
+    assert (
+        audit.secret_scanning_and_push_protection_enabled(tmp_path, facts(repo_settings=settings))
+        is None
+    )
+
+
+def test_secret_scanning_and_push_protection_enabled_fails_when_push_protection_is_off(
+    tmp_path,
+) -> None:
+    settings = {
+        "security_and_analysis": {
+            "secret_scanning": {"status": "enabled"},
+            "secret_scanning_push_protection": {"status": "disabled"},
+        }
+    }
+    assert (
+        audit.secret_scanning_and_push_protection_enabled(tmp_path, facts(repo_settings=settings))
+        is not None
+    )
+
+
+def test_copilot_autofix_for_codeql_enabled_passes_when_enabled(tmp_path) -> None:
+    settings = {"security_and_analysis": {"copilot_autofix": {"status": "enabled"}}}
+    assert audit.copilot_autofix_for_codeql_enabled(tmp_path, facts(repo_settings=settings)) is None
+
+
+def test_copilot_autofix_for_codeql_enabled_fails_when_disabled(tmp_path) -> None:
+    settings = {"security_and_analysis": {"copilot_autofix": {"status": "disabled"}}}
+    assert (
+        audit.copilot_autofix_for_codeql_enabled(tmp_path, facts(repo_settings=settings))
+        is not None
+    )
+
+
+def test_no_private_vulnerability_reporting_passes_when_disabled(tmp_path) -> None:
+    settings = {
+        "security_and_analysis": {"private_vulnerability_reporting": {"status": "disabled"}}
+    }
+    assert audit.no_private_vulnerability_reporting(tmp_path, facts(repo_settings=settings)) is None
+
+
+def test_no_private_vulnerability_reporting_fails_when_enabled(tmp_path) -> None:
+    settings = {"security_and_analysis": {"private_vulnerability_reporting": {"status": "enabled"}}}
+    assert (
+        audit.no_private_vulnerability_reporting(tmp_path, facts(repo_settings=settings))
+        is not None
+    )
+
+
+GOOD_RULESET = {
+    "enforcement": "active",
+    "bypass_actors": [],
+    "rules": [
+        {"type": "pull_request", "parameters": {}},
+        {
+            "type": "required_status_checks",
+            "parameters": {"required_status_checks": [{"context": "ci"}]},
+        },
+        {"type": "deletion"},
+        {"type": "non_fast_forward"},
+        {"type": "required_linear_history"},
+    ],
+}
+
+
+def test_ruleset_requires_ci_check_passes_for_the_standard_ruleset(tmp_path) -> None:
+    assert audit.ruleset_requires_ci_check(tmp_path, facts(ruleset=GOOD_RULESET)) is None
+
+
+def test_ruleset_requires_ci_check_fails_when_no_ruleset_was_found(tmp_path) -> None:
+    assert audit.ruleset_requires_ci_check(tmp_path, facts()) is not None
+
+
+def test_ruleset_requires_ci_check_fails_when_the_ci_context_is_missing(tmp_path) -> None:
+    broken = {**GOOD_RULESET, "rules": [{"type": "pull_request", "parameters": {}}]}
+    assert audit.ruleset_requires_ci_check(tmp_path, facts(ruleset=broken)) is not None
+
+
+def test_ruleset_blocks_history_rewrites_passes_for_the_standard_ruleset(tmp_path) -> None:
+    assert audit.ruleset_blocks_history_rewrites(tmp_path, facts(ruleset=GOOD_RULESET)) is None
+
+
+def test_ruleset_blocks_history_rewrites_fails_when_deletion_is_not_blocked(tmp_path) -> None:
+    broken = {
+        **GOOD_RULESET,
+        "rules": [{"type": "non_fast_forward"}, {"type": "required_linear_history"}],
+    }
+    assert audit.ruleset_blocks_history_rewrites(tmp_path, facts(ruleset=broken)) is not None
+
+
+def test_ruleset_never_requires_reviews_or_thread_resolution_passes_for_the_standard_ruleset(
+    tmp_path,
+) -> None:
+    assert (
+        audit.ruleset_never_requires_reviews_or_thread_resolution(
+            tmp_path, facts(ruleset=GOOD_RULESET)
+        )
+        is None
+    )
+
+
+def test_ruleset_never_requires_reviews_or_thread_resolution_fails_when_reviews_are_required(
+    tmp_path,
+) -> None:
+    broken = {
+        "rules": [
+            {"type": "pull_request", "parameters": {"required_approving_review_count": 1}},
+        ]
+    }
+    assert (
+        audit.ruleset_never_requires_reviews_or_thread_resolution(tmp_path, facts(ruleset=broken))
+        is not None
+    )
+
+
+def test_ruleset_never_requires_reviews_or_thread_resolution_fails_when_branches_must_be_up_to_date(
+    tmp_path,
+) -> None:
+    broken = {
+        "rules": [
+            {
+                "type": "required_status_checks",
+                "parameters": {"strict_required_status_checks_policy": True},
+            },
+        ]
+    }
+    assert (
+        audit.ruleset_never_requires_reviews_or_thread_resolution(tmp_path, facts(ruleset=broken))
+        is not None
+    )
