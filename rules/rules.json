@@ -1,0 +1,927 @@
+[
+  {
+    "id": "CI-001",
+    "text": "Require the `ci` check and no other in the branch ruleset, and arm auto-merge, from the first workflow.",
+    "basis": "owner decision item 1; HANDOFF ruleset section",
+    "category": "gates and CI",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "ruleset_requires_ci_check"
+  },
+  {
+    "id": "CI-002",
+    "text": "Require linear history and block bypass actors, deletion and force push in the branch ruleset.",
+    "basis": "HANDOFF ruleset section",
+    "category": "gates and CI",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "ruleset_blocks_history_rewrites"
+  },
+  {
+    "id": "CI-003",
+    "text": "Key workflow concurrency by ref on pull requests with cancel-in-progress, and by commit sha on pushes.",
+    "basis": "prompt section 8",
+    "category": "gates and CI",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "concurrency_keyed_by_ref_on_pr_and_sha_on_push"
+  },
+  {
+    "id": "CI-004",
+    "text": "Give the required `ci` job `permissions: {}` and `if: always()`, and fail it closed when a job it needs was skipped or cancelled.",
+    "basis": "prompt section 8",
+    "category": "gates and CI",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "ci_gate_job_fails_closed"
+  },
+  {
+    "id": "CI-005",
+    "text": "Run the dependency audit in its own workflow, weekly and on pull requests that touch `pyproject.toml`, outside the gate.",
+    "basis": "prompt section 8",
+    "category": "gates and CI",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "dependency_audit_workflow_separate_and_scheduled"
+  },
+  {
+    "id": "CI-006",
+    "text": "Upload coverage and run diff-cover at 100 on one CI leg once the repo reaches the finish stage.",
+    "basis": "prompt section 5 and 8",
+    "category": "gates and CI",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "diff_cover_runs_on_one_ci_leg"
+  },
+  {
+    "id": "CI-007",
+    "text": "Run the full interpreter matrix on every trigger once the repo reaches the finish stage; the build stage may run one interpreter on pull requests and the full matrix only on pushes to main.",
+    "basis": "prompt section 8; PLAN.md, gate stage table",
+    "category": "gates and CI",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "full_interpreter_matrix_everywhere"
+  },
+  {
+    "id": "CI-008",
+    "text": "Recommend OpenSSF Scorecard for any public repo; say up front that a solo repo plateaus near 8 and that Maintained needs 90 days.",
+    "basis": "prompt section 2, Scorecard",
+    "category": "gates and CI",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment",
+    "when": {
+      "public": true
+    }
+  },
+  {
+    "id": "CI-009",
+    "text": "Recommend CodeQL on a public repo with code; on a private repo recommend it only when the owner says the repo will stay private and matters, since Advanced Security is not free there.",
+    "basis": "prompt section 2, CodeQL",
+    "category": "gates and CI",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "CI-010",
+    "text": "Recommend Dependabot auto-merge only once 100 percent coverage is enforced, a CI check is required, and actions are hash-pinned; otherwise the owner merges Dependabot's pull requests by hand.",
+    "basis": "prompt section 2, Dependabot auto-merge",
+    "category": "gates and CI",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DOC-001",
+    "text": "Never put a CI status badge, a code block, or a link to a workflow file before the README's first heading.",
+    "basis": "what the 2026-09-18 prompt changes: rules it overrides, README row; things the owner has said no to",
+    "category": "readme and brand",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "readme_has_no_ci_badge_code_or_workflow_link_before_content"
+  },
+  {
+    "id": "DOC-002",
+    "text": "Use only Features, Badges, Security, How it compares and Callouts as README section headings, and no others.",
+    "basis": "what the 2026-09-18 prompt changes: rules it overrides, README row",
+    "category": "readme and brand",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "readme_headings_are_only_the_fixed_set"
+  },
+  {
+    "id": "DOC-003",
+    "text": "Write the README's Security section as a never-only checklist, with no checked items.",
+    "basis": "prompt section 11",
+    "category": "readme and brand",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "readme_security_section_is_never_only"
+  },
+  {
+    "id": "DOC-004",
+    "text": "Lead the comparison table with the product's own column, and mark cells with symbols, not the words yes or no.",
+    "basis": "what the 2026-09-18 prompt changes: decisions it settles, comparison tables row",
+    "category": "readme and brand",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DOC-005",
+    "text": "Write the install line as one plain sentence with no code block near it, and link every badge to the install notes, never to a fabricated one-click button.",
+    "basis": "prompt section 5 (naming and brand, PLAN.md); prompt section 11",
+    "category": "readme and brand",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DOC-006",
+    "text": "Give every count the README states its own test that reads it back from disk.",
+    "basis": "PLAN.md, proof section; definition of done",
+    "category": "readme and brand",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DOC-007",
+    "text": "Recommend a still hero image and a social preview for a repo meant to be found; skip the animation unless the owner asks for motion.",
+    "basis": "prompt section 2, hero animation, social preview, README polish",
+    "category": "readme and brand",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DST-001",
+    "text": "Recommend packaging only when a named consumer runs `pip install` or `npx` for a reason that is not a download counter.",
+    "basis": "prompt section 2, packaging",
+    "category": "distribution",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DST-002",
+    "text": "Never tag or cut a release on its own initiative; only when the owner asks.",
+    "basis": "owner decision item 10",
+    "category": "distribution",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DST-003",
+    "text": "Recommend the Marketplace listing only for a GitHub Action meant for other people, never a floating `v1` tag for it.",
+    "basis": "prompt section 2, Marketplace listing",
+    "category": "distribution",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DST-004",
+    "text": "Recommend the OpenSSF Best Practices badge only once the repo can honestly claim Passing today, and never claim Silver or Gold for a one-person project.",
+    "basis": "prompt section 2, Best Practices badge",
+    "category": "distribution",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DST-005",
+    "text": "Register a finished repo for discovery by its shape, in one owner-approved batch, and only in a channel a scout verified as free and used.",
+    "basis": "owner decision item 13",
+    "category": "distribution",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "HRD-001",
+    "text": "Set `permissions: {}` at the top of every workflow.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "workflow_top_level_permissions_empty"
+  },
+  {
+    "id": "HRD-002",
+    "text": "Grant each job only the permissions it needs, declared on the job itself.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "job_level_permissions_declared"
+  },
+  {
+    "id": "HRD-003",
+    "text": "Set `timeout-minutes` on every job.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "job_timeout_minutes_set"
+  },
+  {
+    "id": "HRD-004",
+    "text": "Set `persist-credentials: false` on every checkout step.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "checkout_persist_credentials_false"
+  },
+  {
+    "id": "HRD-005",
+    "text": "Pin every `uses:` to a full commit SHA with a version comment, and resolve an annotated tag to the commit it names, not the tag object.",
+    "basis": "prompt section 6; HANDOFF new material for rules plus audit",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "actions_pinned_to_full_sha_with_version_comment"
+  },
+  {
+    "id": "HRD-006",
+    "text": "Never put `${{ }}` inside a `run:` step; pass the value through `env:` instead.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "no_expression_interpolation_in_run_steps"
+  },
+  {
+    "id": "HRD-007",
+    "text": "Run the secrets scan over full history from the first commit.",
+    "basis": "owner decision item 1, gates ramp: day zero keeps the secrets scan",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "secrets_scan_configured_over_full_history"
+  },
+  {
+    "id": "HRD-008",
+    "text": "Group Dependabot updates weekly with a seven day cooldown, for the github-actions and pip ecosystems only.",
+    "basis": "HANDOFF new material for rules plus audit",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "probe": "dependabot_grouped_weekly_with_cooldown"
+  },
+  {
+    "id": "HRD-009",
+    "text": "At the finish stage, run ruff with `select = [\"ALL\"]`, justify every ignored family with a comment, and never ignore an `S` (security) rule outside test files.",
+    "basis": "prompt section 7",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "when": {
+      "language": "python"
+    },
+    "probe": "ruff_select_all_with_ignores_justified"
+  },
+  {
+    "id": "HRD-010",
+    "text": "Scope the one token a workflow uses to the repository with the minimum permissions, send it only as a request header, and never let it reach a URL, a config file or a log.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "HRD-011",
+    "text": "Refuse plain http, redirects, the default branch as a storage target, and symlinks; never follow one.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "HRD-012",
+    "text": "Land a self-fetch in `RUNNER_TEMP`, never in the consumer's own workspace.",
+    "basis": "prompt section 6",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment",
+    "when": {
+      "has_workflows": true
+    }
+  },
+  {
+    "id": "HRD-013",
+    "text": "Percent-encode any value that reaches a URL path or query, and validate a branch name with `git check-ref-format`, passing it as `refs/heads/<name>` so it cannot be parsed as an option.",
+    "basis": "prompt section 5, graceful failure list",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "NO-001",
+    "text": "Never commit a lockfile.",
+    "basis": "what the 2026-09-18 prompt changes: unchanged and restated; things I have said no to",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "probe": "no_lockfile_committed"
+  },
+  {
+    "id": "NO-002",
+    "text": "Never write `SECURITY.md`.",
+    "basis": "owner decision item 12: none at all, not stamped, not a default",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "probe": "no_security_md"
+  },
+  {
+    "id": "NO-003",
+    "text": "Never let a workflow use a token beyond the built-in `GITHUB_TOKEN` unless the owner opted in.",
+    "basis": "owner decision item 3",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "zero_tokens_beyond_builtin_github_token"
+  },
+  {
+    "id": "NO-004",
+    "text": "Never require reviews, up-to-date branches or thread resolution in the branch ruleset, since each one stalls auto-merge.",
+    "basis": "prompt section 6; HANDOFF ruleset section",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "ruleset_never_requires_reviews_or_thread_resolution"
+  },
+  {
+    "id": "NO-005",
+    "text": "Never publish a package, a release environment, or a wrapper that exists only to feed a download counter.",
+    "basis": "what the 2026-09-18 prompt changes: rules it overrides; things I have said no to",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "NO-006",
+    "text": "Never add fuzzing, Semgrep or Bandit alongside ruff.",
+    "basis": "prompt section 2, things I have said no to",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "NO-007",
+    "text": "Never add telemetry of any kind, including to count consumers.",
+    "basis": "prompt section 2 and 5, things said no to",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "NO-008",
+    "text": "Never put launch copy in the repo.",
+    "basis": "PLAN.md, distribution and strategy",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "NO-009",
+    "text": "Never put a prose gate or an em dash rule into pre-commit or CI; keep it a style rule, never a gate.",
+    "basis": "what the 2026-09-18 prompt changes: rules it overrides, prose gate row",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "NO-010",
+    "text": "Never write test names as anything shorter than a descriptive sentence, and never assert the same behaviour twice across layers.",
+    "basis": "hard rules; PLAN.md, each layer has one job",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "NO-011",
+    "text": "Never turn on private vulnerability reporting.",
+    "basis": "owner decision item 3",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "no_private_vulnerability_reporting"
+  },
+  {
+    "id": "PRC-001",
+    "text": "Give each change its own worktree and branch, and delete both once the change merges.",
+    "basis": "prompt section 3; owner decision item 5, housekeeping is out of the box",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-002",
+    "text": "Send delegated work to the cheapest reliable model, Sonnet for code and prose and Haiku for lookups and one-line edits, and give every builder brief the worktree command, the files to read first, the hard rules, the exact verification commands, the commit title and trailer, the push command, the pull request body template, the auto-merge command, a rebase instruction and a word limit on the report.",
+    "basis": "prompt section 3",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-003",
+    "text": "Arm rebase auto-merge the moment a pull request opens; CI is the verification, not a separate reviewer pass.",
+    "basis": "what the 2026-09-18 prompt changes: rules it overrides, row 1",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-004",
+    "text": "Run a verifier pass only when the owner asks to read it first, which happens for README rewrites.",
+    "basis": "prompt section 3; owner decision item 12",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-005",
+    "text": "Start every sitting with a cheap deterministic resume that reads the stage from the repo, never from stored state, and does not redo a check unless the repo changed.",
+    "basis": "owner decision from the design chat, items 6 and 7",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-006",
+    "text": "Hold only what cannot be read back from the repo in the state file: scope, shapes, opt-ins, prior art, approved outward-facing steps, temporary gate lowerings and the findings ledger.",
+    "basis": "contract.md section 6; owner decision item 6",
+    "category": "process",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "state_file_holds_only_allowed_keys"
+  },
+  {
+    "id": "PRC-007",
+    "text": "Land one pull request per confirmed audit finding, most severe first.",
+    "basis": "what the 2026-09-18 prompt changes: rules it overrides, row 2",
+    "category": "process",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-008",
+    "text": "Give every recommendation a one-line verdict first, then under 120 words what it costs, what it gives, which steps only the owner can do, and what would flip the answer.",
+    "basis": "prompt section 2",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-009",
+    "text": "Never start an outward-facing step, meaning publish, accept an agreement, install an app, change a repo setting, or tag, without the owner's explicit go, and collect every owner-only step into one checklist at the end.",
+    "basis": "prompt section 2",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-010",
+    "text": "Cut a component with no measured gain even if it was requested, and report the number with an offer to reverse.",
+    "basis": "prompt section 3; the loop's keep or cut step in PLAN.md",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-011",
+    "text": "Refuse to report a repo done while any temporarily lowered gate has not been raised back to its finish value.",
+    "basis": "contract.md section 4 and 6; owner decision item 1",
+    "category": "process",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "no_gate_lowering_left_open_at_finish_stage"
+  },
+  {
+    "id": "PRV-001",
+    "text": "Commit under the repo's no-reply identity, never a personal name or email.",
+    "basis": "hard rules; prompt section 3",
+    "category": "privacy and history",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "probe": "commit_identity_is_noreply"
+  },
+  {
+    "id": "PRV-002",
+    "text": "Keep nothing personal in the tree or the history: no personal names, no email addresses, no private repo names, no session links.",
+    "basis": "hard rules",
+    "category": "privacy and history",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRV-003",
+    "text": "Rewrite history if a sweep finds anything that leaked, rather than leaving it and hoping nobody looks.",
+    "basis": "prompt section 2 (OSS-REPO-RULES); PLAN.md, end of the runbook",
+    "category": "privacy and history",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "PRV-004",
+    "text": "Delete a handoff note once it is picked up, and never track a token value or a private consumer's name in a public repo.",
+    "basis": "prompt section 3; HANDOFF, handoff notes are throwaway",
+    "category": "privacy and history",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "REV-001",
+    "text": "Run a repo audit and a CI audit after version one and again before calling the repo done, each covering its own fixed dimensions.",
+    "basis": "prompt section 9",
+    "category": "review",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "REV-002",
+    "text": "Mark every finding confirmed or plausible, most severe first, at most fifteen per audit.",
+    "basis": "prompt section 9",
+    "category": "review",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "REV-003",
+    "text": "Prove a claim the README or a builder makes with a live run, not only with passing tests.",
+    "basis": "prompt section 3; PLAN.md, prior art learnings",
+    "category": "review",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "REV-004",
+    "text": "Recommend CodeRabbit for a public repo with a pull request flow; keep it advisory and never a required check, and note it needs the owner's passkey to install.",
+    "basis": "prompt section 2, CodeRabbit",
+    "category": "review",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment",
+    "when": {
+      "public": true,
+      "has_workflows": true
+    }
+  },
+  {
+    "id": "SCP-001",
+    "text": "State one job, one user and one output before any file exists.",
+    "basis": "owner decision from the design chat, item 7: scripts gather facts, the model judges scope",
+    "category": "scope",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "SCP-002",
+    "text": "Write the refusal list before any file exists.",
+    "basis": "owner decision from the design chat, item 7",
+    "category": "scope",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "SCP-003",
+    "text": "Run a prior art check before the name, and record the outcome as use it, upstream the gap, build only the gap, or build.",
+    "basis": "owner decision from the design chat, item 4",
+    "category": "scope",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "SCP-004",
+    "text": "Pick the distribution shape as a judgment call from the shape table, never for a counter.",
+    "basis": "owner decision from the design chat, item 8",
+    "category": "scope",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "SCP-005",
+    "text": "Decide visibility per repo; a private repo is a legitimate outcome and several recommendation verdicts hang on it.",
+    "basis": "what the 2026-09-18 prompt changes: visibility stops being one global rule",
+    "category": "scope",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "SCP-006",
+    "text": "Coin a name, never pick an existing word, screen it on every registry before committing, and never rename mid-build.",
+    "basis": "owner decision from the design chat, item 9",
+    "category": "scope",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "SET-001",
+    "text": "Turn on auto-merge and delete-branch-on-merge.",
+    "basis": "HANDOFF, settings section; owner decision item 5",
+    "category": "repo settings",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "auto_merge_and_delete_branch_enabled"
+  },
+  {
+    "id": "SET-002",
+    "text": "Allow rebase merges only; turn off squash merges and merge commits.",
+    "basis": "HANDOFF, settings section",
+    "category": "repo settings",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "merge_strategy_is_rebase_only"
+  },
+  {
+    "id": "SET-003",
+    "text": "Turn off the wiki and the projects tab.",
+    "basis": "HANDOFF, settings section",
+    "category": "repo settings",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "wiki_and_projects_disabled"
+  },
+  {
+    "id": "SET-004",
+    "text": "Turn on Dependabot alerts and security updates.",
+    "basis": "HANDOFF, settings section; prompt section 6",
+    "category": "repo settings",
+    "kind": "default",
+    "stage": "build",
+    "check": "api",
+    "probe": "dependabot_alerts_and_security_updates_enabled"
+  },
+  {
+    "id": "SET-005",
+    "text": "Set repo topics once the repo is public.",
+    "basis": "HANDOFF, settings section",
+    "category": "repo settings",
+    "kind": "default",
+    "stage": "finish",
+    "check": "api",
+    "when": {
+      "public": true
+    },
+    "probe": "topics_are_set"
+  },
+  {
+    "id": "SET-006",
+    "text": "Turn on secret scanning and push protection once the repo is public.",
+    "basis": "prompt section 6; owner decision item 12: most of these only work on a public repo",
+    "category": "repo settings",
+    "kind": "default",
+    "stage": "finish",
+    "check": "api",
+    "when": {
+      "public": true
+    },
+    "probe": "secret_scanning_and_push_protection_enabled"
+  },
+  {
+    "id": "SET-007",
+    "text": "Turn on Copilot Autofix for CodeQL once the repo is public and CodeQL runs.",
+    "basis": "prompt section 6; HANDOFF, settings section",
+    "category": "repo settings",
+    "kind": "default",
+    "stage": "finish",
+    "check": "api",
+    "when": {
+      "public": true
+    },
+    "probe": "copilot_autofix_for_codeql_enabled"
+  },
+  {
+    "id": "STR-001",
+    "text": "Depend on nothing beyond the standard library at runtime.",
+    "basis": "prompt section 4",
+    "category": "structure and leanness",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "probe": "stdlib_only_runtime_dependencies"
+  },
+  {
+    "id": "STR-002",
+    "text": "Keep dev tooling in a dependency group with no build backend, since the repo is not a published package.",
+    "basis": "prompt section 4; HANDOFF new material for rules plus audit",
+    "category": "structure and leanness",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "probe": "dev_tooling_in_dependency_group"
+  },
+  {
+    "id": "STR-003",
+    "text": "Keep each human-facing doc under 300 lines.",
+    "basis": "prompt section 4, size targets",
+    "category": "structure and leanness",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "docs_under_300_lines"
+  },
+  {
+    "id": "STR-004",
+    "text": "Keep the repo under 250 KB.",
+    "basis": "prompt section 4, size targets",
+    "category": "structure and leanness",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "repo_under_250kb"
+  },
+  {
+    "id": "STR-005",
+    "text": "Run the leanness pass (ponytail, report only) twice, code then docs, and never wire it into CI.",
+    "basis": "prompt section 4",
+    "category": "structure and leanness",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "leanness_tool_never_wired_into_ci"
+  },
+  {
+    "id": "STR-006",
+    "text": "Delete one-caller wrappers and dead code once a measured pass finds them; reject a cut that a test import or a stated spec line requires.",
+    "basis": "prompt section 4; PLAN.md, the split rule",
+    "category": "structure and leanness",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "TST-001",
+    "text": "Keep the coverage floor at 70 percent or higher from the first commit, even though the build stage does not require full coverage.",
+    "basis": "owner decision item 1, gates ramp",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "probe": "coverage_floor_at_least_seventy"
+  },
+  {
+    "id": "TST-002",
+    "text": "Enforce 100 percent line and branch coverage once the repo reaches the finish stage.",
+    "basis": "prompt section 5",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "coverage_floor_is_100_line_and_branch"
+  },
+  {
+    "id": "TST-003",
+    "text": "Use `# pragma: no cover` only on a `__main__` guard, and only with a trailing reason after it.",
+    "basis": "hard rules; prompt section 5",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "pragma_no_cover_only_on_main_guard_with_reason"
+  },
+  {
+    "id": "TST-004",
+    "text": "Land every fix with a test that fails before the fix and passes after.",
+    "basis": "prompt section 5",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "TST-005",
+    "text": "Give every test a long descriptive name that states one behaviour.",
+    "basis": "hard rules; prompt section 5",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "TST-006",
+    "text": "Fake the network in every test; never let a test reach it.",
+    "basis": "prompt section 5",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "TST-007",
+    "text": "Give every rule the README states its own test.",
+    "basis": "prompt section 9; definition of done in PLAN.md",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  }
+]
