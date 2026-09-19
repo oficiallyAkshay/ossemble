@@ -1,0 +1,5 @@
+{
+  "optins": {
+    "TRAFFIC_TOKEN": "clonometer.yml reads this repository's traffic counts and writes them to the badges branch. The built-in GITHUB_TOKEN cannot be granted Administration, which is where the traffic endpoints sit, so the counter needs a fine-grained token of its own."
+  }
+}

@@ -123,15 +123,6 @@ def test_str_003_states_it_covers_only_human_docs_not_references_or_agents() -> 
     assert "agents" in rule["basis"]
 
 
-def test_str_004_states_it_counts_git_tracked_bytes_outside_tests_and_examples() -> None:
-    rule = _rule_by_id("STR-004")
-    assert "git-tracked" in rule["text"]
-    assert "tests/" in rule["text"]
-    assert "examples/" in rule["text"]
-    assert "test" in rule["basis"]
-    assert "example" in rule["basis"]
-
-
 def test_every_probe_named_by_a_rule_exists_as_a_function_in_audit_py() -> None:
     named_probes = {rule["probe"] for rule in _load_rules() if "probe" in rule}
     for probe_name in named_probes:

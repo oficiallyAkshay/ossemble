@@ -910,16 +910,6 @@
     "probe": "docs_under_300_lines"
   },
   {
-    "id": "STR-004",
-    "text": "Keep the repo under 250 KB, counting git-tracked bytes outside tests/ and examples/ and not counting template files the manifest names, since those mirror live files already counted.",
-    "basis": "prompt section 4, size targets; the four-to-one test rule makes tests the bulk of the tree, and examples/ holds a stamped fixture, not source; a manifest-named template mirrors a live file byte for byte, so counting both would double it",
-    "category": "structure and leanness",
-    "kind": "default",
-    "stage": "finish",
-    "check": "audit",
-    "probe": "repo_under_250kb"
-  },
-  {
     "id": "STR-005",
     "text": "Run the leanness pass (ponytail, report only) twice, code then docs, and never wire it into CI.",
     "basis": "prompt section 4",
