@@ -138,8 +138,8 @@
   },
   {
     "id": "DOC-002",
-    "text": "Use only Features, Badges, Security, How it compares and Callouts as README section headings, and no others.",
-    "basis": "what the 2026-09-18 prompt changes: rules it overrides, README row",
+    "text": "Use only Features, In action, Fit, How it compares, Security and limits and Badges as README section headings, in that order, and no others.",
+    "basis": "readmerlin's shape/section-order rule, sectionOrder config (readmerlin.mjs); SKILL.md, The shape",
     "category": "readme and brand",
     "kind": "default",
     "stage": "finish",
@@ -148,8 +148,8 @@
   },
   {
     "id": "DOC-003",
-    "text": "Write the README's Security section as a never-only checklist, with no checked items.",
-    "basis": "prompt section 11",
+    "text": "Write the README's Security and limits section as a never-only checklist, with no checked items.",
+    "basis": "prompt section 11; readmerlin's Security and limits heading, SKILL.md, The shape",
     "category": "readme and brand",
     "kind": "default",
     "stage": "finish",
