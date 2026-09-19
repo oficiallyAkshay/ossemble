@@ -2,7 +2,7 @@
 
 Read by the model at build-runbook step 6 (tighten) and step 10 (recommend) to pick tools per repo. This table is data the model reads, not code the audit runs; `audit` only checks that a picked tool is configured and sitting at its finish value.
 
-A few rows are always on whenever their trigger exists in the repo being built, not opt-in per language: a secrets scan, and workflow lint, workflow security and pin verification whenever any workflow file exists. (HRD-007, HRD-005) Everything else is a Python pick, a public-only pick, or an explicit owner recommendation from build-runbook step 10.
+A few rows are always on whenever their trigger exists in the repo being built, not opt-in per language: a secrets scan, and workflow lint, workflow security and pin verification whenever any workflow file exists. (HRD-007, HRD-005) Everything else is a Python pick, a public-only pick, or an explicit owner recommendation from build-runbook step 10. A public-only pick's own workflow carries a job-level `github.event.repository.visibility != 'private'` guard, written as a negative so a missing context runs rather than silently skips, so it can be stamped before the repo is public and starts working on its own at the flip.
 
 | Tool | Applies when | Cost | Always or conditional | Stage |
 | --- | --- | --- | --- | --- |
