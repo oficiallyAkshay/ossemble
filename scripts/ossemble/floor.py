@@ -14,7 +14,9 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-FAIL_UNDER_LINE = re.compile(r"^(?P<prefix>fail_under\s*=\s*)(?P<value>\d+)\s*$", re.MULTILINE)
+FAIL_UNDER_LINE = re.compile(
+    r"^(?P<prefix>fail_under\s*=\s*)(?P<value>\d+)(?P<trailing>[ \t]*)$", re.MULTILINE
+)
 
 
 def add_parser(subparsers):
@@ -80,7 +82,11 @@ def run(args) -> int:
         print(f"fail_under stays at {current}; achieved coverage is {achieved}")
         return 0
 
-    updated = text[: match.start()] + f"{match.group('prefix')}{new_value}" + text[match.end() :]
+    updated = (
+        text[: match.start()]
+        + f"{match.group('prefix')}{new_value}{match.group('trailing')}"
+        + text[match.end() :]
+    )
     try:
         pyproject_path.write_text(updated, encoding="utf-8")
     except OSError as exc:

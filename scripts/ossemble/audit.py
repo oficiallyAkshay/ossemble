@@ -61,36 +61,46 @@ def add_parser(subparsers):
     return parser
 
 
-def run(args) -> int:
-    """Audit `args.path` and print the gap table (and, with a `--json` twin, JSON)."""
-    root = Path(args.path)
-    if root.is_symlink():
-        print("ossemble audit: refusing to follow a symlink as the target path", file=sys.stderr)
-        return 1
-    if not root.is_dir():
-        print(f"ossemble audit: {args.path} is not a directory", file=sys.stderr)
-        return 1
-    root = root.resolve()
+class _UnknownProbeError(RuntimeError):
+    """A rule names a probe that does not exist in this module."""
 
-    rules_path = root / "rules" / "rules.json"
-    if not rules_path.is_file():
-        print("ossemble audit: no rules/rules.json found under the target repo", file=sys.stderr)
-        return 1
-    try:
-        rules = json.loads(rules_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"ossemble audit: cannot read rules/rules.json: {exc}", file=sys.stderr)
-        return 1
 
-    facts = _gather_facts(root, use_api=args.api)
+def _rules_path() -> Path:
+    """The path to ossemble's own rules/rules.json, kept beside this package.
 
+    The rules describe how ossemble judges a repo; they are never read from
+    the repo being audited.
+    """
+    return Path(__file__).resolve().parents[2] / "rules" / "rules.json"
+
+
+def _load_rules() -> list[dict]:
+    """Load and parse ossemble's own rules.json.
+
+    Raises FileNotFoundError when it is missing, or OSError/JSONDecodeError
+    when it cannot be read or parsed.
+    """
+    path = _rules_path()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _score(
+    root: Path, facts: dict, rules: list[dict], *, use_api: bool
+) -> tuple[list[dict], list[dict]]:
+    """Evaluate `rules` against `root`/`facts`, returning (gaps, recommendations).
+
+    Raises `_UnknownProbeError` when a rule names a probe this module does
+    not define.
+    """
     gaps: list[dict[str, str]] = []
     recommendations: list[dict[str, str]] = []
     for rule in rules:
         check = rule.get("check")
         if check not in ("audit", "api"):
             continue
-        if check == "api" and not args.api:
+        if check == "api" and not use_api:
             continue
         if not _applies(rule.get("when") or {}, facts):
             continue
@@ -100,11 +110,7 @@ def run(args) -> int:
         probe_name = rule.get("probe")
         probe = PROBES.get(probe_name)
         if probe is None:
-            print(
-                f"ossemble audit: rule {rule.get('id')} names an unknown probe {probe_name!r}",
-                file=sys.stderr,
-            )
-            return 1
+            raise _UnknownProbeError(f"rule {rule.get('id')} names an unknown probe {probe_name!r}")
 
         try:
             result = probe(root, facts)
@@ -125,20 +131,66 @@ def run(args) -> int:
 
     gaps.sort(key=lambda row: row["id"])
     recommendations.sort(key=lambda row: row["id"])
+    return gaps, recommendations
+
+
+def gaps(root: Path, *, use_api: bool = False) -> list[dict]:
+    """Score `root` against ossemble's own rules.json and return the sorted gap rows.
+
+    These are the same default-rule rows `run` prints in the gap table and
+    with `--json`. Used by `resume` to compute regressions against a
+    recorded baseline.
+    """
+    root = Path(root).resolve()
+    rules = _load_rules()
+    facts = _gather_facts(root, use_api=use_api)
+    gap_rows, _recommendations = _score(root, facts, rules, use_api=use_api)
+    return gap_rows
+
+
+def run(args) -> int:
+    """Audit `args.path` and print the gap table (and, with a `--json` twin, JSON)."""
+    root = Path(args.path)
+    if root.is_symlink():
+        print("ossemble audit: refusing to follow a symlink as the target path", file=sys.stderr)
+        return 1
+    if not root.is_dir():
+        print(f"ossemble audit: {args.path} is not a directory", file=sys.stderr)
+        return 1
+    root = root.resolve()
+
+    try:
+        rules = _load_rules()
+    except FileNotFoundError:
+        print(
+            "ossemble audit: no rules/rules.json found beside the ossemble script",
+            file=sys.stderr,
+        )
+        return 1
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ossemble audit: cannot read rules/rules.json: {exc}", file=sys.stderr)
+        return 1
+
+    facts = _gather_facts(root, use_api=args.api)
+    try:
+        gap_rows, recommendation_rows = _score(root, facts, rules, use_api=args.api)
+    except _UnknownProbeError as exc:
+        print(f"ossemble audit: {exc}", file=sys.stderr)
+        return 1
 
     if args.as_json:
-        print(json.dumps(gaps, indent=2, sort_keys=True))
+        print(json.dumps(gap_rows, indent=2, sort_keys=True))
     else:
-        for row in gaps:
+        for row in gap_rows:
             print(f"{row['id']}  {row['kind']}  {row['stage']}  {row['file']}  {row['message']}")
-        if recommendations:
+        if recommendation_rows:
             print("Recommendations")
-            for row in recommendations:
+            for row in recommendation_rows:
                 print(
                     f"{row['id']}  {row['kind']}  {row['stage']}  {row['file']}  {row['message']}"
                 )
 
-    return 1 if gaps else 0
+    return 1 if gap_rows else 0
 
 
 # --------------------------------------------------------------------- facts
@@ -235,6 +287,20 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
+def _run_git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
+    """Run `git -C root <args>`, or None when git itself could not be run."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except OSError:
+        return None
+
+
 def _steps(text: str) -> list[str]:
     """Split a workflow's raw text into one chunk per `- ` list item."""
     matches = list(STEP_START.finditer(text))
@@ -282,17 +348,8 @@ def _gh_api(path: str) -> object:
 
 
 def _remote_owner_repo(root: Path) -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
+    result = _run_git(root, "remote", "get-url", "origin")
+    if result is None or result.returncode != 0:
         return None
     match = re.search(r"github\.com[:/]([^/]+)/([^/.]+?)(?:\.git)?$", result.stdout.strip())
     if not match:
@@ -620,17 +677,8 @@ def _tracked_files(root: Path) -> set[str] | None:
     """The repo's git-tracked paths, or None when `root` is not a git repo."""
     if not (root / ".git").exists():
         return None
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "ls-files"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
+    result = _run_git(root, "ls-files")
+    if result is None or result.returncode != 0:
         return None
     return set(result.stdout.splitlines())
 
@@ -648,16 +696,9 @@ def zero_tokens_beyond_builtin_github_token(root: Path, facts: dict):
 
 
 def commit_identity_is_noreply(root: Path, facts: dict):
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "log", "-1", "--format=%ae"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except OSError as exc:
-        return (".", f"could not read git history: {exc}")
+    result = _run_git(root, "log", "-1", "--format=%ae")
+    if result is None:
+        return (".", "could not read git history")
     email = result.stdout.strip()
     if result.returncode != 0 or not email:
         return (".", "no commit history found to check the author identity")

@@ -67,6 +67,26 @@ def test_run_raises_fail_under_to_the_achieved_whole_number(tmp_path, capsys) ->
     assert "fail_under = 86" in (tmp_path / "pyproject.toml").read_text()
 
 
+def test_run_preserves_a_trailing_newline_when_the_file_had_one(tmp_path, capsys) -> None:
+    write(tmp_path / "pyproject.toml", "[tool.coverage.report]\nfail_under = 70\n")
+    xml_path = write(tmp_path / "coverage.xml", COVERAGE_XML)
+
+    floor.run(argparse.Namespace(path=str(tmp_path), coverage_xml=str(xml_path)))
+
+    updated = (tmp_path / "pyproject.toml").read_text()
+    assert updated == "[tool.coverage.report]\nfail_under = 86\n"
+
+
+def test_run_preserves_no_trailing_newline_when_the_file_had_none(tmp_path, capsys) -> None:
+    write(tmp_path / "pyproject.toml", "[tool.coverage.report]\nfail_under = 70")
+    xml_path = write(tmp_path / "coverage.xml", COVERAGE_XML)
+
+    floor.run(argparse.Namespace(path=str(tmp_path), coverage_xml=str(xml_path)))
+
+    updated = (tmp_path / "pyproject.toml").read_text()
+    assert updated == "[tool.coverage.report]\nfail_under = 86"
+
+
 def test_run_never_lowers_fail_under_below_its_current_value(tmp_path, capsys) -> None:
     write(tmp_path / "pyproject.toml", "[tool.coverage.report]\nfail_under = 95\n")
     xml_path = write(tmp_path / "coverage.xml", COVERAGE_XML)
