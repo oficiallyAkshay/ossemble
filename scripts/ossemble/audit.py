@@ -45,7 +45,17 @@ LOCKFILE_NAMES = (
     "pnpm-lock.yaml",
 )
 
-README_ALLOWED_HEADINGS = {"features", "badges", "security", "how it compares", "callouts"}
+# readmerlin's closed section order (its `sectionOrder` config, readmerlin.mjs). A README
+# heading must come from this set, in this order.
+README_SECTION_ORDER = [
+    "features",
+    "in action",
+    "fit",
+    "how it compares",
+    "security and limits",
+    "badges",
+]
+README_ALLOWED_HEADINGS = set(README_SECTION_ORDER)
 
 STEP_START = re.compile(r"^( *)- ", re.MULTILINE)
 
@@ -902,30 +912,40 @@ def readme_has_no_ci_badge_code_or_workflow_link_before_content(
 
 
 def readme_headings_are_only_the_fixed_set(root: Path, _facts: dict) -> ProbeResult:
-    """Confirm every README heading is in the fixed, allowed set."""
+    """Confirm every README heading is in readmerlin's closed set, in its order."""
     text = _read_text(root / "README.md")
     if text is None:
         return ("README.md", "file is missing")
+    seen: list[str] = []
     for match in re.finditer(r"^##\s+(.+)$", text, re.MULTILINE):
         normalized = match.group(1).strip().lower()
         if normalized not in README_ALLOWED_HEADINGS:
             return ("README.md", f"heading {match.group(1)!r} is not in the fixed set")
+        seen.append(normalized)
+    positions = [README_SECTION_ORDER.index(heading) for heading in seen]
+    if positions != sorted(positions):
+        return ("README.md", "headings are out of readmerlin's fixed order")
     return None
 
 
 def readme_security_section_is_never_only(root: Path, _facts: dict) -> ProbeResult:
-    """Write the README's Security section as a never-only checklist."""
+    """Write the README's Security and limits section as a never-only checklist."""
     text = _read_text(root / "README.md")
     if text is None:
         return ("README.md", "file is missing")
-    match = re.search(r"^##\s+Security\s*$(.*?)(^##\s|\Z)", text, re.MULTILINE | re.DOTALL)
+    match = re.search(
+        r"^##\s+Security and limits\s*$(.*?)(^##\s|\Z)", text, re.MULTILINE | re.DOTALL
+    )
     if not match:
         return None
     body = match.group(1)
     if "✅" in body:
-        return ("README.md", "the Security section has a checked (✅) item; it must be never-only")
+        return (
+            "README.md",
+            "the Security and limits section has a checked (✅) item; it must be never-only",
+        )
     if "❌" not in body:
-        return ("README.md", "the Security section has no never (❌) items")
+        return ("README.md", "the Security and limits section has no never (❌) items")
     return None
 
 

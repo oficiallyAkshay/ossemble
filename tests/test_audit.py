@@ -1881,7 +1881,7 @@ def test_readme_has_no_ci_badge_code_or_workflow_link_before_content_fails_for_a
 
 
 def test_readme_headings_are_only_the_fixed_set_passes_for_allowed_headings(tmp_path) -> None:
-    write(tmp_path, "README.md", "# ossemble\n\n## Features\n\n## Security\n")
+    write(tmp_path, "README.md", "# ossemble\n\n## Features\n\n## Security and limits\n")
     assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is None
 
 
@@ -1890,7 +1890,41 @@ def test_readme_headings_are_only_the_fixed_set_fails_for_a_forbidden_heading(tm
     assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is not None
 
 
+def test_readme_headings_are_only_the_fixed_set_fails_for_the_old_bare_security_heading(
+    tmp_path,
+) -> None:
+    write(tmp_path, "README.md", "# ossemble\n\n## Security\n")
+    assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is not None
+
+
 def test_readme_headings_are_only_the_fixed_set_fails_when_missing(tmp_path) -> None:
+    assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is not None
+
+
+def test_readme_headings_are_only_the_fixed_set_passes_for_all_six_headings_in_order(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        "README.md",
+        "# ossemble\n\n"
+        "## Features\n\n## In action\n\n## Fit\n\n## How it compares\n\n"
+        "## Security and limits\n\n## Badges\n",
+    )
+    assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is None
+
+
+def test_readme_headings_are_only_the_fixed_set_passes_for_a_subset_in_order(tmp_path) -> None:
+    write(
+        tmp_path,
+        "README.md",
+        "# ossemble\n\n## Features\n\n## How it compares\n\n## Badges\n",
+    )
+    assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is None
+
+
+def test_readme_headings_are_only_the_fixed_set_fails_when_out_of_order(tmp_path) -> None:
+    write(tmp_path, "README.md", "# ossemble\n\n## Badges\n\n## Features\n")
     assert audit.readme_headings_are_only_the_fixed_set(tmp_path, facts()) is not None
 
 
@@ -1905,8 +1939,15 @@ def test_readme_security_section_is_never_only_passes_without_a_security_section
     assert audit.readme_security_section_is_never_only(tmp_path, facts()) is None
 
 
+def test_readme_security_section_is_never_only_passes_for_the_old_bare_security_heading(
+    tmp_path,
+) -> None:
+    write(tmp_path, "README.md", "## Security\n\n- Uses a token\n")
+    assert audit.readme_security_section_is_never_only(tmp_path, facts()) is None
+
+
 def test_readme_security_section_is_never_only_fails_with_no_never_items(tmp_path) -> None:
-    write(tmp_path, "README.md", "## Security\n\nNothing to see here.\n")
+    write(tmp_path, "README.md", "## Security and limits\n\nNothing to see here.\n")
     assert audit.readme_security_section_is_never_only(tmp_path, facts()) is not None
 
 
@@ -1914,13 +1955,17 @@ def test_readme_security_section_is_never_only_passes_for_a_never_only_checklist
     write(
         tmp_path,
         "README.md",
-        "## Security\n\n- Never sends a token to a URL\n- ❌ Never phones home\n",
+        "## Security and limits\n\n- Never sends a token to a URL\n- ❌ Never phones home\n",
     )
     assert audit.readme_security_section_is_never_only(tmp_path, facts()) is None
 
 
 def test_readme_security_section_is_never_only_fails_when_a_checked_item_appears(tmp_path) -> None:
-    write(tmp_path, "README.md", "## Security\n\n- ✅ Uses a token\n- ❌ Never phones home\n")
+    write(
+        tmp_path,
+        "README.md",
+        "## Security and limits\n\n- ✅ Uses a token\n- ❌ Never phones home\n",
+    )
     assert audit.readme_security_section_is_never_only(tmp_path, facts()) is not None
 
 
