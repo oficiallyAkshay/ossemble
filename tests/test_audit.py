@@ -25,6 +25,7 @@ BASE_FACTS = {
     "stage": "build",
     "repo_settings": None,
     "ruleset": None,
+    "automated_security_fixes": None,
 }
 
 
@@ -698,9 +699,10 @@ def test_gather_facts_leaves_public_and_settings_unset_without_the_api_flag(tmp_
     assert result["public"] is None
     assert result["repo_settings"] is None
     assert result["ruleset"] is None
+    assert result["automated_security_fixes"] is None
 
 
-def test_gather_facts_reads_repo_settings_and_the_main_ruleset_with_the_api_flag(
+def test_gather_facts_reads_repo_settings_the_main_ruleset_and_security_fixes_with_the_api_flag(
     tmp_path, monkeypatch
 ) -> None:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
@@ -717,6 +719,8 @@ def test_gather_facts_reads_repo_settings_and_the_main_ruleset_with_the_api_flag
             return [{"id": 1, "name": "main"}]
         if path == "repos/an-owner/a-repo/rulesets/1":
             return {"enforcement": "active"}
+        if path == "repos/an-owner/a-repo/automated-security-fixes":
+            return {"enabled": True, "paused": False}
         raise AssertionError(f"unexpected path {path}")
 
     monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
@@ -726,6 +730,7 @@ def test_gather_facts_reads_repo_settings_and_the_main_ruleset_with_the_api_flag
     assert result["public"] is True
     assert result["repo_settings"] == {"private": False}
     assert result["ruleset"] == {"enforcement": "active"}
+    assert result["automated_security_fixes"] == {"enabled": True, "paused": False}
 
 
 def test_gather_facts_skips_a_non_main_ruleset_before_finding_the_main_one(
@@ -745,6 +750,8 @@ def test_gather_facts_skips_a_non_main_ruleset_before_finding_the_main_one(
             return [{"id": 1, "name": "other"}, {"id": 2, "name": "main"}]
         if path == "repos/an-owner/a-repo/rulesets/2":
             return {"enforcement": "active"}
+        if path == "repos/an-owner/a-repo/automated-security-fixes":
+            return {"enabled": True, "paused": False}
         raise AssertionError(f"unexpected path {path}")
 
     monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
@@ -769,6 +776,8 @@ def test_gather_facts_leaves_the_ruleset_unset_when_none_is_named_main(
             return {"private": False}
         if path == "repos/an-owner/a-repo/rulesets":
             return [{"id": 1, "name": "other"}]
+        if path == "repos/an-owner/a-repo/automated-security-fixes":
+            return {"enabled": True, "paused": False}
         raise AssertionError(f"unexpected path {path}")
 
     monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
@@ -795,6 +804,34 @@ def test_gather_facts_tolerates_a_failing_gh_api_call(tmp_path, monkeypatch) -> 
 
     assert result["repo_settings"] is None
     assert result["ruleset"] is None
+    assert result["automated_security_fixes"] is None
+
+
+def test_gather_facts_tolerates_a_failing_automated_security_fixes_call(
+    tmp_path, monkeypatch
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def fake_gh_api(path):
+        if path == "repos/an-owner/a-repo":
+            return {"private": True}
+        if path == "repos/an-owner/a-repo/rulesets":
+            return []
+        if path == "repos/an-owner/a-repo/automated-security-fixes":
+            raise RuntimeError("gh: not found")
+        raise AssertionError(f"unexpected path {path}")
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+
+    result = audit._gather_facts(tmp_path, use_api=True)
+
+    assert result["repo_settings"] == {"private": True}
+    assert result["automated_security_fixes"] is None
 
 
 def test_gather_facts_reads_each_workflow_file_pyproject_and_tracked_files_exactly_once(
@@ -2280,6 +2317,71 @@ def test_dependabot_alerts_and_security_updates_enabled_fails_when_disabled(tmp_
     )
 
 
+def test_dependabot_alerts_and_security_updates_enabled_passes_via_the_private_repo_fallback(
+    tmp_path,
+) -> None:
+    """A private repo without Advanced Security omits security_and_analysis entirely."""
+    settings: dict = {}
+    fallback = {"enabled": True, "paused": False}
+    assert (
+        audit.dependabot_alerts_and_security_updates_enabled(
+            tmp_path, facts(repo_settings=settings, automated_security_fixes=fallback)
+        )
+        is None
+    )
+
+
+def test_dependabot_alerts_and_security_updates_enabled_fails_when_the_fallback_is_disabled(
+    tmp_path,
+) -> None:
+    settings: dict = {}
+    fallback = {"enabled": False, "paused": False}
+    assert (
+        audit.dependabot_alerts_and_security_updates_enabled(
+            tmp_path, facts(repo_settings=settings, automated_security_fixes=fallback)
+        )
+        is not None
+    )
+
+
+def test_dependabot_alerts_and_security_updates_enabled_fails_when_the_fallback_is_paused(
+    tmp_path,
+) -> None:
+    settings: dict = {}
+    fallback = {"enabled": True, "paused": True}
+    assert (
+        audit.dependabot_alerts_and_security_updates_enabled(
+            tmp_path, facts(repo_settings=settings, automated_security_fixes=fallback)
+        )
+        is not None
+    )
+
+
+def test_dependabot_alerts_and_security_updates_enabled_fails_when_the_fallback_is_unreadable(
+    tmp_path,
+) -> None:
+    settings: dict = {}
+    assert (
+        audit.dependabot_alerts_and_security_updates_enabled(
+            tmp_path, facts(repo_settings=settings, automated_security_fixes=None)
+        )
+        is not None
+    )
+
+
+def test_dependabot_alerts_and_security_updates_enabled_treats_null_analysis_as_missing(
+    tmp_path,
+) -> None:
+    settings = {"security_and_analysis": None}
+    fallback = {"enabled": True, "paused": False}
+    assert (
+        audit.dependabot_alerts_and_security_updates_enabled(
+            tmp_path, facts(repo_settings=settings, automated_security_fixes=fallback)
+        )
+        is None
+    )
+
+
 def test_topics_are_set_passes_with_topics(tmp_path) -> None:
     settings = {"topics": ["skill", "agent"]}
     assert audit.topics_are_set(tmp_path, facts(repo_settings=settings)) is None
@@ -2343,6 +2445,16 @@ def test_secret_scanning_and_push_protection_enabled_fails_when_push_protection_
     )
 
 
+def test_secret_scanning_and_push_protection_enabled_fails_when_security_and_analysis_is_null(
+    tmp_path,
+) -> None:
+    settings = {"security_and_analysis": None}
+    assert (
+        audit.secret_scanning_and_push_protection_enabled(tmp_path, facts(repo_settings=settings))
+        is not None
+    )
+
+
 def test_copilot_autofix_for_codeql_enabled_passes_when_enabled(tmp_path) -> None:
     settings = {"security_and_analysis": {"copilot_autofix": {"status": "enabled"}}}
     assert audit.copilot_autofix_for_codeql_enabled(tmp_path, facts(repo_settings=settings)) is None
@@ -2356,6 +2468,16 @@ def test_copilot_autofix_for_codeql_enabled_fails_when_repo_settings_are_unavail
 
 def test_copilot_autofix_for_codeql_enabled_fails_when_disabled(tmp_path) -> None:
     settings = {"security_and_analysis": {"copilot_autofix": {"status": "disabled"}}}
+    assert (
+        audit.copilot_autofix_for_codeql_enabled(tmp_path, facts(repo_settings=settings))
+        is not None
+    )
+
+
+def test_copilot_autofix_for_codeql_enabled_fails_when_security_and_analysis_is_null(
+    tmp_path,
+) -> None:
+    settings = {"security_and_analysis": None}
     assert (
         audit.copilot_autofix_for_codeql_enabled(tmp_path, facts(repo_settings=settings))
         is not None
@@ -2381,6 +2503,13 @@ def test_no_private_vulnerability_reporting_fails_when_enabled(tmp_path) -> None
         audit.no_private_vulnerability_reporting(tmp_path, facts(repo_settings=settings))
         is not None
     )
+
+
+def test_no_private_vulnerability_reporting_passes_when_security_and_analysis_is_null(
+    tmp_path,
+) -> None:
+    settings = {"security_and_analysis": None}
+    assert audit.no_private_vulnerability_reporting(tmp_path, facts(repo_settings=settings)) is None
 
 
 GOOD_RULESET = {
