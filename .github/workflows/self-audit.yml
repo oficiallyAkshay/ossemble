@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       # The script is standard library only, so the runner's own python3
       # is enough; no uv, no sync.
+      # Only `audit`: `resume` also checks the developer's environment (uv,
+      # a no-reply identity), which a runner does not have and should not.
       - name: audit this repo against its own rules
         run: python3 scripts/ossemble audit
-      - name: resume reports the finish stage with no regression
-        run: python3 scripts/ossemble resume
