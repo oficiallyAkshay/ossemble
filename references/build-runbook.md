@@ -294,7 +294,7 @@ Who decides: model, from read-only evidence; the owner only if a cut needs sayin
 
 The order here is fixed: delete, then test, then audit. Ponytail and the live run happen now, before step 6 tightens anything, so nobody writes a test for code that is about to be cut, and the two audits at step 7 read only the final, already-lean code. (STR-005)
 
-Three things run in parallel, all read-only: the ponytail skill in report-only mode over the code (never wired into CI) (STR-005); a live run of the built thing end to end, because a claim is proved by a run, not by tests that can pass while the live path fails (REV-003); and, if a second consumer already exists, a check that it still works against this build.
+Three things run in parallel, all read-only: the ponytail skill in report-only mode over the code (never wired into CI) (STR-005); a live run of the built thing end to end, because a claim is proved by a run, not by tests that can pass while the live path fails (REV-003); and, if a second consumer already exists, a check that it still works against this build. A survey of comparable community repos is part of this second-consumer pass too, in two directions: what the audit flags on them, where a false positive becomes a probe fix, and what they carry that ossemble lacks, judged against the owner's axes and verdicted adopt, recommend or skip with a number.
 
 A cut needs a measured number: no measured gain, it goes, even if it was asked for, with the number reported and an offer to reverse. (PRC-010) A cut that a spec line or a test import requires is rejected. (STR-006) Each accepted cut is its own PR, and nothing is tested that is about to be removed.
 
@@ -311,6 +311,8 @@ python3 scripts/ossemble scaffold --set <picked-tool>
 ```
 
 Once this lands, the finish-stage gates are on: coverage and changed-line coverage at 100, the full lint rule set with every ignore justified in a comment, and every picked tool enforced. (TST-002, CI-006, HRD-009)
+
+When the full formatter first runs repo-wide at this step, record that commit in `.git-blame-ignore-revs` (`references/tools.md` has why). `ty` is a conditional Python pick placed here, alongside the other finish-stage tools; `references/tools.md` has its measured basis.
 
 ## 7 Review
 
@@ -353,6 +355,8 @@ For every optional part, the model states a verdict first in one line, do it or 
 | CodeRabbit | public repo with a PR flow, advisory only, needs the owner's passkey (REV-004) | staying private, where it is paid |
 | Dependabot auto-merge | coverage enforced at 100, a required CI check, and hash-pinned actions all hold (CI-010) | any of the three is missing; the owner merges Dependabot PRs by hand instead |
 | Hero and social preview | the repo is meant to be found (DOC-007) | private or single-consumer; skip motion unless the owner asks for it |
+| Dependency review (`actions/dependency-review-action`) | public, with any declared dependencies, dev groups count | private, or dependency-free |
+| AGENTS.md | agents will work on the repo | a single-file skill |
 
 No outward-facing step, meaning publish, accept an agreement, install an app, change a repo setting, or tag, starts without the owner's explicit go for that item. (PRC-009) Approved items become parallel PRs, one worktree each, using the mechanics named for each part in `references/tools.md`.
 
