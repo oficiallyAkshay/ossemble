@@ -10,7 +10,7 @@ metadata:
 
 # ossemble
 
-Takes a need, or an existing repo, and leaves behind a public repo a stranger can trust: tests, gates, an honest README, clean history, nothing personal. The model judges what a repo needs; the script only gathers facts and checks whether a thing is done; the owner approves anything outward-facing.
+Takes a need, or an existing repo, and leaves behind a public repo a stranger can trust: tests, gates, an honest README, clean history, nothing personal. (PRV-002) The model judges what a repo needs; the script only gathers facts and checks whether a thing is done; the owner approves anything outward-facing. (PRC-009)
 
 ## Two entry points
 
@@ -25,7 +25,7 @@ Run this before anything else, in the repo being built or hardened:
 python3 scripts/ossemble resume
 ```
 
-It checks the environment, reads the stage from the repo, lists any gate the agent lowered, and names the next step. It never redoes work the repo already proves is done.
+It checks the environment, reads the stage from the repo, lists any gate the agent lowered (PRC-011), and names the next step. It never redoes work the repo already proves is done. (PRC-005)
 
 ## Where to look next
 
