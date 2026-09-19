@@ -34,7 +34,7 @@
   },
   {
     "id": "CI-004",
-    "text": "Give the required `ci` job `permissions: {}` and `if: always()`, and fail it closed when a job it needs was skipped or cancelled.",
+    "text": "A pull-request workflow with two or more jobs needs one always-running gate job that depends on every other and fails closed via `re-actors/alls-green` or `needs.*.result`; a single job needs no gate.",
     "basis": "prompt section 8",
     "category": "gates and CI",
     "kind": "default",
@@ -300,7 +300,7 @@
   },
   {
     "id": "HRD-005",
-    "text": "Pin every `uses:` to a full commit SHA with a version comment, and resolve an annotated tag to the commit it names, not the tag object; a deliberate unpinned self-reference is allowed only with `zizmor: ignore[unpinned-uses]` and at least one word of reason on the same line.",
+    "text": "Pin every `uses:` to a full commit SHA with a version comment (quoted or not, ratchet's form counts); a local path or `docker://` is exempt; an unpinned self-reference needs `zizmor: ignore[unpinned-uses]` and a reason.",
     "basis": "prompt section 6; HANDOFF new material for rules plus audit",
     "category": "hardening",
     "kind": "default",
@@ -339,7 +339,7 @@
   },
   {
     "id": "HRD-008",
-    "text": "Group Dependabot updates weekly with a seven day cooldown, for the github-actions and pip ecosystems only.",
+    "text": "Group every Dependabot package-ecosystem update weekly with a seven day cooldown, for any ecosystem; read `.github/dependabot.yml` or `.yaml`, whichever GitHub itself reads.",
     "basis": "HANDOFF new material for rules plus audit",
     "category": "hardening",
     "kind": "default",
@@ -401,12 +401,15 @@
   },
   {
     "id": "NO-001",
-    "text": "Never commit a lockfile.",
+    "text": "Never commit a lockfile; binds Python repos only, since the basis is uv resolving a Python dev group.",
     "basis": "what the 2026-09-18 prompt changes: unchanged and restated; things I have said no to",
     "category": "the no-list",
     "kind": "default",
     "stage": "build",
     "check": "audit",
+    "when": {
+      "language": "python"
+    },
     "probe": "no_lockfile_committed"
   },
   {
@@ -899,8 +902,8 @@
   },
   {
     "id": "STR-004",
-    "text": "Keep the repo under 250 KB, counting git-tracked bytes outside tests/ and examples/.",
-    "basis": "prompt section 4, size targets; the four-to-one test rule makes tests the bulk of the tree, and examples/ holds a stamped fixture, not source",
+    "text": "Keep the repo under 250 KB, counting git-tracked bytes outside tests/ and examples/ and not counting template files the manifest names, since those mirror live files already counted.",
+    "basis": "prompt section 4, size targets; the four-to-one test rule makes tests the bulk of the tree, and examples/ holds a stamped fixture, not source; a manifest-named template mirrors a live file byte for byte, so counting both would double it",
     "category": "structure and leanness",
     "kind": "default",
     "stage": "finish",
