@@ -560,6 +560,20 @@ def test_format_report_shows_the_coverage_floor_and_lowered_entries_when_present
 # --- run(): end to end ----------------------------------------------------------------------------
 
 
+def test_run_refuses_to_follow_a_symlinked_target_path(tmp_path, capsys) -> None:
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real_dir)
+
+    exit_code = resume.run(argparse.Namespace(path=str(link), json=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == "ossemble resume: refusing to follow a symlink as the target path\n"
+    assert list(real_dir.iterdir()) == []
+
+
 def test_run_returns_zero_and_prints_text_lines_for_a_clean_repo(
     monkeypatch, tmp_path, capsys
 ) -> None:

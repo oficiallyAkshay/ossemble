@@ -156,6 +156,9 @@ def _stamp_one(
 
 def _scaffold(args: argparse.Namespace) -> int:
     """Do the actual work of run(), raising ScaffoldError on any failure."""
+    if Path(args.path).is_symlink():
+        raise ScaffoldError("refusing to follow a symlink as the target path")
+
     manifest = _load_manifest()
     variables = _parse_variables(args.variables)
     selected = sorted(

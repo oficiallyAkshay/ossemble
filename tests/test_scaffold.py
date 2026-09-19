@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -534,6 +535,33 @@ def test_run_with_check_on_an_already_stamped_tree_reports_nothing_and_exits_zer
     assert captured.err == ""
 
 
+def test_run_refuses_to_follow_a_symlinked_target_path(custom_templates, tmp_path, capsys) -> None:
+    (custom_templates / "greeting.txt").write_text("hello\n", encoding="utf-8")
+    _write_manifest(
+        custom_templates,
+        [
+            {
+                "src": "greeting.txt",
+                "dest": "greeting.txt",
+                "set": "boot",
+                "vars": [],
+                "rules": [],
+            }
+        ],
+    )
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real_dir)
+
+    exit_code = scaffold.run(_make_args(path=str(link), set_name="boot"))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == "ossemble scaffold: refusing to follow a symlink as the target path\n"
+    assert list(real_dir.iterdir()) == []
+
+
 def test_run_refuses_to_write_through_a_symlinked_destination(
     custom_templates, tmp_path, capsys
 ) -> None:
@@ -695,9 +723,13 @@ class TestExamplesMinimalRebuildsByteForByte:
             assert rebuilt == committed, f"examples/minimal/{dest} is not a byte-for-byte rebuild"
 
     def test_the_committed_example_has_no_extra_files(self) -> None:
-        committed = {
-            str(path.relative_to(self.EXAMPLE_ROOT))
-            for path in self.EXAMPLE_ROOT.rglob("*")
-            if path.is_file()
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-files", "examples/minimal"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        tracked = {
+            line.removeprefix("examples/minimal/") for line in result.stdout.splitlines() if line
         }
-        assert committed == set(self.EXAMPLE_DESTS)
+        assert tracked == set(self.EXAMPLE_DESTS)
