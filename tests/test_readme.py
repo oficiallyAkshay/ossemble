@@ -10,7 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 README = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 PYPROJECT = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-EXPECTED_HEADINGS = ["Features", "Badges", "Security", "How it compares", "Callouts"]
+EXPECTED_HEADINGS = ["Features", "In action", "Fit", "How it compares", "Security and limits"]
 
 
 def test_the_python_floor_in_the_readme_matches_pyproject() -> None:
@@ -29,7 +29,7 @@ def test_the_licence_badge_matches_the_licence_file() -> None:
     assert "license-MIT" in README
 
 
-def test_the_coverage_ramp_in_the_callouts_matches_the_templates() -> None:
+def test_the_coverage_ramp_in_security_and_limits_matches_the_templates() -> None:
     manifest = json.loads((REPO_ROOT / "templates" / "manifest.json").read_text(encoding="utf-8"))
     boot = next(e for e in manifest if e["set"] == "boot" and e["dest"] == "pyproject.toml")
     finish = (REPO_ROOT / "templates" / "finish" / "pyproject.toml").read_text(encoding="utf-8")
@@ -38,10 +38,10 @@ def test_the_coverage_ramp_in_the_callouts_matches_the_templates() -> None:
     assert "70 while building, 100 at finish" in README
 
 
-def test_the_section_headings_are_the_fixed_six_in_order() -> None:
+def test_the_section_headings_are_the_fixed_five_in_order() -> None:
     headings = re.findall(r"^## (.+)$", README, flags=re.MULTILINE)
     assert headings == EXPECTED_HEADINGS
-    assert README.startswith("# 🧩 ossemble\n")
+    assert README.startswith('<h1 align="center">🧩 ossemble</h1>\n')
 
 
 def test_the_comparison_table_puts_ossemble_first_and_uses_no_yes_or_no_cells() -> None:

@@ -1,0 +1,20 @@
+{
+  "title": "ossemble reads a need or an existing repo, runs its gates, and hands back a repo a stranger can trust",
+  "sources": [
+    { "label": "A need", "icon": "sparkles", "gives": "scope" },
+    { "label": "An existing repo", "icon": "folder", "gives": "audit" }
+  ],
+  "handled": [
+    { "label": "Secrets scanning", "icon": "shield" },
+    { "label": "Pinned actions", "icon": "link" },
+    { "label": "Coverage gates", "icon": "target" },
+    { "label": "Rule audits", "icon": "badge-check" }
+  ],
+  "more": true,
+  "deliverable": {
+    "label": "A repo a stranger can trust",
+    "heading": "Finished repo",
+    "kind": "document",
+    "backing": "tests, gates, an honest README, clean history"
+  }
+}
