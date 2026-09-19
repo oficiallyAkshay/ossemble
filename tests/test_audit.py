@@ -41,6 +41,17 @@ def workflow(root: Path, content: str, name: str = "ci.yml") -> Path:
     return write(root, f".github/workflows/{name}", content)
 
 
+def stub_rules(monkeypatch, tmp_path: Path, rules: list[dict]) -> Path:
+    """Point `audit` at a rules.json of our own instead of ossemble's real one.
+
+    The stub lives outside the target repo, under a directory named for
+    the target so several stubs in one test never collide.
+    """
+    rules_path = write(tmp_path.parent, f"{tmp_path.name}-rules/rules.json", json.dumps(rules))
+    monkeypatch.setattr(audit, "_rules_path", lambda: rules_path)
+    return rules_path
+
+
 def init_git_repo(
     root: Path, author_email: str = "154273+octocat@users.noreply.github.com"
 ) -> None:
@@ -90,7 +101,9 @@ def test_run_refuses_to_follow_a_symlink_as_the_target_path(tmp_path, capsys) ->
     assert "symlink" in captured.err
 
 
-def test_run_returns_one_when_rules_json_is_missing(tmp_path, capsys) -> None:
+def test_run_returns_one_when_rules_json_is_missing(tmp_path, capsys, monkeypatch) -> None:
+    monkeypatch.setattr(audit, "_rules_path", lambda: tmp_path / "missing" / "rules.json")
+
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
 
     captured = capsys.readouterr()
@@ -98,8 +111,9 @@ def test_run_returns_one_when_rules_json_is_missing(tmp_path, capsys) -> None:
     assert "no rules/rules.json" in captured.err
 
 
-def test_run_returns_one_when_rules_json_is_not_valid_json(tmp_path, capsys) -> None:
-    write(tmp_path, "rules/rules.json", "not json")
+def test_run_returns_one_when_rules_json_is_not_valid_json(tmp_path, capsys, monkeypatch) -> None:
+    bad_rules = write(tmp_path.parent, f"{tmp_path.name}-rules/rules.json", "not json")
+    monkeypatch.setattr(audit, "_rules_path", lambda: bad_rules)
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
 
@@ -108,24 +122,24 @@ def test_run_returns_one_when_rules_json_is_not_valid_json(tmp_path, capsys) -> 
     assert "cannot read rules/rules.json" in captured.err
 
 
-def test_run_returns_one_and_names_the_rule_when_a_probe_is_unknown(tmp_path, capsys) -> None:
-    write(
+def test_run_returns_one_and_names_the_rule_when_a_probe_is_unknown(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(
+        monkeypatch,
         tmp_path,
-        "rules/rules.json",
-        json.dumps(
-            [
-                {
-                    "id": "ZZ-001",
-                    "text": "made up",
-                    "basis": "test",
-                    "category": "made up",
-                    "kind": "default",
-                    "stage": "build",
-                    "check": "audit",
-                    "probe": "nonexistent_probe",
-                }
-            ]
-        ),
+        [
+            {
+                "id": "ZZ-001",
+                "text": "made up",
+                "basis": "test",
+                "category": "made up",
+                "kind": "default",
+                "stage": "build",
+                "check": "audit",
+                "probe": "nonexistent_probe",
+            }
+        ],
     )
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
@@ -151,8 +165,10 @@ def _rule(**overrides) -> dict:
     return rule
 
 
-def test_run_prints_a_gap_row_and_returns_one_when_a_default_rule_fails(tmp_path, capsys) -> None:
-    write(tmp_path, "rules/rules.json", json.dumps([_rule()]))
+def test_run_prints_a_gap_row_and_returns_one_when_a_default_rule_fails(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule()])
     write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
@@ -165,8 +181,10 @@ def test_run_prints_a_gap_row_and_returns_one_when_a_default_rule_fails(tmp_path
     )
 
 
-def test_run_prints_nothing_and_returns_zero_when_every_rule_passes(tmp_path, capsys) -> None:
-    write(tmp_path, "rules/rules.json", json.dumps([_rule()]))
+def test_run_prints_nothing_and_returns_zero_when_every_rule_passes(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule()])
     write(tmp_path, "pyproject.toml", "[project]\ndependencies = []\n")
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
@@ -176,8 +194,8 @@ def test_run_prints_nothing_and_returns_zero_when_every_rule_passes(tmp_path, ca
     assert captured.out == ""
 
 
-def test_run_json_prints_a_sorted_list_of_gap_objects(tmp_path, capsys) -> None:
-    write(tmp_path, "rules/rules.json", json.dumps([_rule()]))
+def test_run_json_prints_a_sorted_list_of_gap_objects(tmp_path, capsys, monkeypatch) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule()])
     write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=True, api=False))
@@ -197,13 +215,9 @@ def test_run_json_prints_a_sorted_list_of_gap_objects(tmp_path, capsys) -> None:
 
 
 def test_run_prints_a_failing_recommendation_under_its_own_heading_without_changing_the_exit_code(
-    tmp_path, capsys
+    tmp_path, capsys, monkeypatch
 ) -> None:
-    write(
-        tmp_path,
-        "rules/rules.json",
-        json.dumps([_rule(id="DST-777", kind="recommendation")]),
-    )
+    stub_rules(monkeypatch, tmp_path, [_rule(id="DST-777", kind="recommendation")])
     write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
@@ -215,12 +229,8 @@ def test_run_prints_a_failing_recommendation_under_its_own_heading_without_chang
     assert lines[1].startswith("DST-777  recommendation")
 
 
-def test_run_skips_a_rule_whose_when_condition_is_not_met(tmp_path, capsys) -> None:
-    write(
-        tmp_path,
-        "rules/rules.json",
-        json.dumps([_rule(when={"has_workflows": True})]),
-    )
+def test_run_skips_a_rule_whose_when_condition_is_not_met(tmp_path, capsys, monkeypatch) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule(when={"has_workflows": True})])
     write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
@@ -231,13 +241,9 @@ def test_run_skips_a_rule_whose_when_condition_is_not_met(tmp_path, capsys) -> N
 
 
 def test_run_skips_a_finish_stage_rule_while_the_repo_is_still_at_the_build_stage(
-    tmp_path, capsys
+    tmp_path, capsys, monkeypatch
 ) -> None:
-    write(
-        tmp_path,
-        "rules/rules.json",
-        json.dumps([_rule(stage="finish")]),
-    )
+    stub_rules(monkeypatch, tmp_path, [_rule(stage="finish")])
     write(
         tmp_path,
         "pyproject.toml",
@@ -252,13 +258,9 @@ def test_run_skips_a_finish_stage_rule_while_the_repo_is_still_at_the_build_stag
 
 
 def test_run_evaluates_a_finish_stage_rule_once_the_coverage_floor_reaches_100(
-    tmp_path, capsys
+    tmp_path, capsys, monkeypatch
 ) -> None:
-    write(
-        tmp_path,
-        "rules/rules.json",
-        json.dumps([_rule(stage="finish")]),
-    )
+    stub_rules(monkeypatch, tmp_path, [_rule(stage="finish")])
     write(
         tmp_path,
         "pyproject.toml",
@@ -270,11 +272,11 @@ def test_run_evaluates_a_finish_stage_rule_once_the_coverage_floor_reaches_100(
     assert exit_code == 1
 
 
-def test_run_skips_an_api_rule_when_the_api_flag_is_not_given(tmp_path, capsys) -> None:
-    write(
-        tmp_path,
-        "rules/rules.json",
-        json.dumps([_rule(check="api", probe="auto_merge_and_delete_branch_enabled")]),
+def test_run_skips_an_api_rule_when_the_api_flag_is_not_given(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(
+        monkeypatch, tmp_path, [_rule(check="api", probe="auto_merge_and_delete_branch_enabled")]
     )
 
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
@@ -287,10 +289,8 @@ def test_run_skips_an_api_rule_when_the_api_flag_is_not_given(tmp_path, capsys) 
 def test_run_evaluates_an_api_rule_when_the_api_flag_is_given(
     tmp_path, capsys, monkeypatch
 ) -> None:
-    write(
-        tmp_path,
-        "rules/rules.json",
-        json.dumps([_rule(check="api", probe="auto_merge_and_delete_branch_enabled")]),
+    stub_rules(
+        monkeypatch, tmp_path, [_rule(check="api", probe="auto_merge_and_delete_branch_enabled")]
     )
     monkeypatch.setattr(
         audit,
@@ -305,6 +305,52 @@ def test_run_evaluates_an_api_rule_when_the_api_flag_is_given(
     exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=True))
 
     assert exit_code == 1
+
+
+def test_run_reads_rules_from_ossemble_not_the_target_even_without_a_rules_dir(
+    tmp_path, capsys
+) -> None:
+    """A target repo with no rules/ directory of its own still audits fine."""
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert "no rules/rules.json" not in captured.err
+    assert exit_code in (0, 1)
+
+
+def test_gaps_returns_the_same_rows_run_prints(tmp_path, capsys, monkeypatch) -> None:
+    stub_rules(
+        monkeypatch,
+        tmp_path,
+        [_rule(), _rule(id="STR-002", stage="finish")],
+    )
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+
+    rows = audit.gaps(tmp_path)
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=True, api=False))
+
+    printed_rows = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert rows == printed_rows
+    assert rows == [
+        {
+            "id": "STR-001",
+            "kind": "default",
+            "stage": "build",
+            "file": "pyproject.toml",
+            "message": "[project] dependencies is not empty: ['requests']",
+        }
+    ]
+
+
+def test_gaps_resolves_a_relative_path(tmp_path, monkeypatch) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule()])
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+    monkeypatch.chdir(tmp_path)
+
+    rows = audit.gaps(Path("."))
+
+    assert [row["id"] for row in rows] == ["STR-001"]
 
 
 # ------------------------------------------------------------------- facts

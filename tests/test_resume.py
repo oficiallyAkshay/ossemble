@@ -27,6 +27,30 @@ def _write_pyproject(tmp_path, fail_under) -> None:
     (tmp_path / "pyproject.toml").write_text(f"[tool.coverage.report]\nfail_under = {fail_under}\n")
 
 
+def _init_git_repo(tmp_path, commit: bool = True) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "1+owner@users.noreply.github.com"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "config", "user.name", "owner"], cwd=tmp_path, check=True)
+    if commit:
+        (tmp_path / "README.md").write_text("# repo\n")
+        subprocess.run(["git", "add", "README.md"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "Add the README"], cwd=tmp_path, check=True)
+
+
+def _stub_audit(monkeypatch, tmp_path, gap_ids: list[str]) -> None:
+    """Install a fake `audit` module with the shape `_audit_check` relies on."""
+    rules_file = tmp_path.parent / f"{tmp_path.name}-rules.json"
+    rules_file.write_text("[]\n", encoding="utf-8")
+    stub = types.ModuleType("audit")
+    stub.gaps = lambda path, use_api=False: [{"id": gap_id} for gap_id in gap_ids]
+    stub._rules_path = lambda: rules_file
+    monkeypatch.setitem(sys.modules, "audit", stub)
+
+
 # --- add_parser ------------------------------------------------------------------------------
 
 
@@ -219,36 +243,193 @@ def test_read_state_accepts_a_correctly_shaped_state_file(tmp_path) -> None:
     assert error is None
 
 
-# --- _regressions ----------------------------------------------------------------------------------
+# --- _audit_check ----------------------------------------------------------------------------------
 
 
-def test_regressions_reports_not_available_when_audit_cannot_be_imported(
+def test_audit_check_reports_not_available_when_audit_cannot_be_imported(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setitem(sys.modules, "audit", None)
-    assert resume._regressions(tmp_path) == "audit not available"
+    assert resume._audit_check(tmp_path, {}) == ("audit not available", 0, None)
 
 
-def test_regressions_reports_not_available_when_audit_has_no_regressions_probe(
+def test_audit_check_reports_not_available_when_gaps_is_missing(monkeypatch, tmp_path) -> None:
+    monkeypatch.setitem(sys.modules, "audit", types.ModuleType("audit"))
+    assert resume._audit_check(tmp_path, {}) == ("audit not available", 0, None)
+
+
+def test_audit_check_reports_not_available_when_gaps_raises(monkeypatch, tmp_path) -> None:
+    stub = types.ModuleType("audit")
+    stub.gaps = lambda path, use_api=False: (_ for _ in ()).throw(RuntimeError("broken"))
+    monkeypatch.setitem(sys.modules, "audit", stub)
+    assert resume._audit_check(tmp_path, {}) == ("audit not available", 0, None)
+
+
+def test_audit_check_reports_no_baseline_when_the_repo_has_no_commits(
     monkeypatch, tmp_path
 ) -> None:
+    _stub_audit(monkeypatch, tmp_path, ["CI-001"])
+    _init_git_repo(tmp_path, commit=False)
+
+    regressions, gap_count, new_baseline = resume._audit_check(tmp_path, {})
+
+    assert regressions == "no baseline"
+    assert gap_count == 1
+    assert new_baseline is None
+
+
+def test_audit_check_reports_none_and_a_new_baseline_when_none_was_recorded(
+    monkeypatch, tmp_path
+) -> None:
+    _stub_audit(monkeypatch, tmp_path, ["CI-001", "STR-001"])
+    _init_git_repo(tmp_path)
+
+    regressions, gap_count, new_baseline = resume._audit_check(tmp_path, {})
+
+    assert regressions == "none"
+    assert gap_count == 2
+    assert new_baseline["gaps"] == ["CI-001", "STR-001"]
+    assert new_baseline["commit"]
+    assert new_baseline["hash"]
+
+
+def test_audit_check_reports_a_regression_for_a_gap_absent_from_the_baseline(
+    monkeypatch, tmp_path
+) -> None:
+    _stub_audit(monkeypatch, tmp_path, ["CI-001", "STR-001"])
+    _init_git_repo(tmp_path)
+    state = {"checks": {"audit": {"commit": "old", "hash": "old", "gaps": ["CI-001"]}}}
+
+    regressions, gap_count, new_baseline = resume._audit_check(tmp_path, state)
+
+    assert regressions == "STR-001"
+    assert gap_count == 2
+    assert new_baseline["gaps"] == ["CI-001", "STR-001"]
+
+
+def test_audit_check_reports_none_when_the_baseline_has_no_new_gaps(monkeypatch, tmp_path) -> None:
+    _stub_audit(monkeypatch, tmp_path, ["CI-001"])
+    _init_git_repo(tmp_path)
+    state = {"checks": {"audit": {"commit": "old", "hash": "old", "gaps": ["CI-001", "STR-001"]}}}
+
+    regressions, gap_count, new_baseline = resume._audit_check(tmp_path, state)
+
+    assert regressions == "none"
+    assert gap_count == 1
+    assert new_baseline["gaps"] == ["CI-001"]
+
+
+# --- _head_commit ------------------------------------------------------------------------------
+
+
+def test_head_commit_is_none_outside_a_git_repo(tmp_path) -> None:
+    assert resume._head_commit(tmp_path) is None
+
+
+def test_head_commit_returns_the_sha_for_a_repo_with_a_commit(tmp_path) -> None:
+    _init_git_repo(tmp_path)
+    commit = resume._head_commit(tmp_path)
+    assert commit and len(commit) == 40
+
+
+def test_head_commit_is_none_when_git_cannot_run(monkeypatch, tmp_path) -> None:
+    def fail(*_args, **_kwargs):
+        raise OSError("git not found")
+
+    monkeypatch.setattr(resume.subprocess, "run", fail)
+    assert resume._head_commit(tmp_path) is None
+
+
+# --- _rules_hash ---------------------------------------------------------------------------------
+
+
+def test_rules_hash_hashes_the_rules_file_contents(tmp_path) -> None:
+    rules_file = tmp_path / "rules.json"
+    rules_file.write_text("[]\n", encoding="utf-8")
     stub = types.ModuleType("audit")
-    monkeypatch.setitem(sys.modules, "audit", stub)
-    assert resume._regressions(tmp_path) == "audit not available"
+    stub._rules_path = lambda: rules_file
+
+    import hashlib
+
+    assert resume._rules_hash(stub) == hashlib.sha256(b"[]\n").hexdigest()
 
 
-def test_regressions_reports_not_available_when_the_probe_raises(monkeypatch, tmp_path) -> None:
+def test_rules_hash_is_none_when_the_rules_file_cannot_be_read(tmp_path) -> None:
     stub = types.ModuleType("audit")
-    stub.regressions = lambda path: (_ for _ in ()).throw(RuntimeError("not finished"))
-    monkeypatch.setitem(sys.modules, "audit", stub)
-    assert resume._regressions(tmp_path) == "audit not available"
+    stub._rules_path = lambda: tmp_path / "missing.json"
+    assert resume._rules_hash(stub) is None
 
 
-def test_regressions_returns_the_probes_result_when_it_succeeds(monkeypatch, tmp_path) -> None:
-    stub = types.ModuleType("audit")
-    stub.regressions = lambda path: ["CI-001"]
-    monkeypatch.setitem(sys.modules, "audit", stub)
-    assert resume._regressions(tmp_path) == ["CI-001"]
+# --- _write_baseline -----------------------------------------------------------------------------
+
+
+def test_write_baseline_creates_the_state_file_with_only_the_checks_key(tmp_path) -> None:
+    resume._write_baseline(tmp_path, {"commit": "a", "hash": "b", "gaps": []})
+
+    data = json.loads((tmp_path / ".ossemble" / "state.json").read_text())
+    assert set(data) == {"checks"}
+    assert data["checks"]["audit"] == {"commit": "a", "hash": "b", "gaps": []}
+
+
+def test_write_baseline_keeps_every_other_key_and_check(tmp_path) -> None:
+    state_dir = tmp_path / ".ossemble"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text(
+        json.dumps({"scope": {"value": "x"}, "checks": {"other": {"commit": "z"}}})
+    )
+
+    resume._write_baseline(tmp_path, {"commit": "a", "hash": "b", "gaps": ["CI-001"]})
+
+    data = json.loads((state_dir / "state.json").read_text())
+    assert data["scope"] == {"value": "x"}
+    assert data["checks"]["other"] == {"commit": "z"}
+    assert data["checks"]["audit"] == {"commit": "a", "hash": "b", "gaps": ["CI-001"]}
+
+
+def test_write_baseline_refuses_a_symlinked_state_file(tmp_path) -> None:
+    real_target = tmp_path / "elsewhere.json"
+    real_target.write_text("{}")
+    state_dir = tmp_path / ".ossemble"
+    state_dir.mkdir()
+    (state_dir / "state.json").symlink_to(real_target)
+
+    resume._write_baseline(tmp_path, {"commit": "a", "hash": "b", "gaps": []})
+
+    assert real_target.read_text() == "{}"
+
+
+def test_write_baseline_starts_fresh_when_the_existing_file_is_not_valid_json(tmp_path) -> None:
+    state_dir = tmp_path / ".ossemble"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text("not json")
+
+    resume._write_baseline(tmp_path, {"commit": "a", "hash": "b", "gaps": []})
+
+    data = json.loads((state_dir / "state.json").read_text())
+    assert data["checks"]["audit"] == {"commit": "a", "hash": "b", "gaps": []}
+
+
+def test_write_baseline_starts_fresh_when_the_existing_file_holds_a_json_list(tmp_path) -> None:
+    state_dir = tmp_path / ".ossemble"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text("[]")
+
+    resume._write_baseline(tmp_path, {"commit": "a", "hash": "b", "gaps": []})
+
+    data = json.loads((state_dir / "state.json").read_text())
+    assert set(data) == {"checks"}
+    assert data["checks"]["audit"] == {"commit": "a", "hash": "b", "gaps": []}
+
+
+def test_write_baseline_swallows_an_oserror_while_writing(monkeypatch, tmp_path) -> None:
+    def fail(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(resume.Path, "write_text", fail)
+
+    resume._write_baseline(tmp_path, {"commit": "a", "hash": "b", "gaps": []})
+
+    assert not (tmp_path / ".ossemble" / "state.json").exists()
 
 
 # --- _next_step -------------------------------------------------------------------------------------
@@ -308,6 +489,7 @@ def test_format_report_lists_the_missing_tools_and_identity_problem_when_not_ok(
         "stage": "unknown",
         "coverage_floor": None,
         "regressions": "audit not available",
+        "gaps": 0,
         "lowered": [],
         "next_step": "fix the environment",
     }
@@ -318,6 +500,8 @@ def test_format_report_lists_the_missing_tools_and_identity_problem_when_not_ok(
     assert "  missing: gh" in lines
     assert "  identity: not a no-reply git identity" in lines
     assert "stage: unknown" in lines
+    assert "gaps: 0" in lines
+    assert "regressions: audit not available" in lines
     assert "lowered: none" in lines
 
 
@@ -327,6 +511,7 @@ def test_format_report_shows_only_the_identity_line_when_every_tool_is_present()
         "stage": "unknown",
         "coverage_floor": None,
         "regressions": "audit not available",
+        "gaps": 0,
         "lowered": [],
         "next_step": "fix the environment",
     }
@@ -343,6 +528,7 @@ def test_format_report_shows_only_the_missing_line_when_the_identity_is_fine() -
         "stage": "unknown",
         "coverage_floor": None,
         "regressions": "audit not available",
+        "gaps": 0,
         "lowered": [],
         "next_step": "fix the environment",
     }
@@ -359,6 +545,7 @@ def test_format_report_shows_the_coverage_floor_and_lowered_entries_when_present
         "stage": "build",
         "coverage_floor": 70,
         "regressions": "audit not available",
+        "gaps": 0,
         "lowered": [{"gate": "coverage", "from": 100, "to": 70, "why": "still building"}],
         "next_step": "continue",
     }
@@ -430,3 +617,45 @@ def test_run_returns_one_when_the_environment_is_not_ok(monkeypatch, tmp_path) -
     exit_code = resume.run(argparse.Namespace(path=str(tmp_path), json=False))
 
     assert exit_code == 1
+
+
+def test_run_prints_gaps_and_regressions_and_writes_a_baseline(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _all_tools_present(monkeypatch)
+    _fake_git_config(monkeypatch, "1+owner@users.noreply.github.com\n")
+    _write_pyproject(tmp_path, 70)
+    _stub_audit(monkeypatch, tmp_path, ["CI-001"])
+
+    exit_code = resume.run(argparse.Namespace(path=str(tmp_path), json=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "gaps: 1" in captured.out
+    assert "regressions: none" in captured.out
+    state = json.loads((tmp_path / ".ossemble" / "state.json").read_text())
+    assert state["checks"]["audit"]["gaps"] == ["CI-001"]
+
+
+def test_run_reports_a_regression_on_a_second_run_when_a_new_gap_appears(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _all_tools_present(monkeypatch)
+    _fake_git_config(monkeypatch, "1+owner@users.noreply.github.com\n")
+    _write_pyproject(tmp_path, 70)
+
+    _stub_audit(monkeypatch, tmp_path, ["CI-001"])
+    resume.run(argparse.Namespace(path=str(tmp_path), json=False))
+    capsys.readouterr()
+
+    _stub_audit(monkeypatch, tmp_path, ["CI-001", "STR-002"])
+    exit_code = resume.run(argparse.Namespace(path=str(tmp_path), json=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "regressions: STR-002" in captured.out
+
+    _stub_audit(monkeypatch, tmp_path, ["CI-001", "STR-002"])
+    exit_code = resume.run(argparse.Namespace(path=str(tmp_path), json=False))
+    assert "regressions: none" in capsys.readouterr().out
+    assert exit_code == 0
