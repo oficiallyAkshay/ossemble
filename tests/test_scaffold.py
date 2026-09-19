@@ -696,6 +696,78 @@ class TestRealTemplatesMatchThisRepo:
         assert 'select = ["ALL"]' in rendered
 
 
+class TestNewOptionalSetsStampIdempotentlyAndPassCheck:
+    """dependency-review and agents-md: each manifest entry stamps cleanly.
+
+    Each is idempotent, and reports nothing pending under --check once
+    stamped.
+    """
+
+    NEW_SETS = ("dependency-review", "agents-md")
+
+    @pytest.mark.parametrize("set_name", NEW_SETS)
+    def test_stamping_the_set_succeeds_and_stamping_again_changes_nothing(
+        self, set_name, tmp_path
+    ) -> None:
+        args = _make_args(path=str(tmp_path), set_name=set_name, variables=["NAME=widget"])
+
+        first = scaffold.run(args)
+        before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+        second = scaffold.run(args)
+        after = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+
+        assert first == 0
+        assert second == 0
+        assert before == after
+
+    @pytest.mark.parametrize("set_name", NEW_SETS)
+    def test_check_reports_nothing_pending_once_the_set_is_already_stamped(
+        self, set_name, tmp_path, capsys
+    ) -> None:
+        variables = ["NAME=widget"]
+        scaffold.run(_make_args(path=str(tmp_path), set_name=set_name, variables=variables))
+
+        exit_code = scaffold.run(
+            _make_args(path=str(tmp_path), set_name=set_name, variables=variables, check=True)
+        )
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        assert captured.out == ""
+        assert captured.err == ""
+
+    def test_dependency_review_workflow_is_a_pinned_pull_request_only_gate(self, tmp_path) -> None:
+        exit_code = scaffold.run(_make_args(path=str(tmp_path), set_name="dependency-review"))
+
+        assert exit_code == 0
+        rendered = (tmp_path / ".github" / "workflows" / "dependency-review.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "pull_request" in rendered
+        assert "permissions: {}" in rendered
+        assert "contents: read" in rendered
+        assert "persist-credentials: false" in rendered
+        assert (
+            "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0"
+            in rendered
+        )
+        assert "fail-on-severity: high" in rendered
+        assert "comment-summary-in-pr: on-failure" in rendered
+        assert "cancel-in-progress: true" in rendered
+
+    def test_agents_md_renders_name_and_claude_md_is_a_one_line_pointer(self, tmp_path) -> None:
+        exit_code = scaffold.run(
+            _make_args(path=str(tmp_path), set_name="agents-md", variables=["NAME=widget"])
+        )
+
+        assert exit_code == 0
+        agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+        claude = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "widget" in agents
+        assert "CONTRIBUTING.md" in agents
+        assert claude == "Read AGENTS.md; it is the one agent-instructions file for this repo.\n"
+
+
 class TestExamplesMinimalRebuildsByteForByte:
     """examples/minimal/ is boot, stamped once and committed; scaffold must reproduce it."""
 

@@ -131,6 +131,23 @@
     ]
   },
   {
+    "src": "dependency-review/.github/workflows/dependency-review.yml",
+    "dest": ".github/workflows/dependency-review.yml",
+    "set": "dependency-review",
+    "when": null,
+    "vars": [],
+    "rules": [
+      "CI-011",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "NO-003"
+    ]
+  },
+  {
     "src": "scorecard/.github/workflows/scorecard.yml",
     "dest": ".github/workflows/scorecard.yml",
     "set": "scorecard",
@@ -165,6 +182,28 @@
     "vars": [],
     "rules": [
       "HRD-007"
+    ]
+  },
+  {
+    "src": "agents-md/AGENTS.md",
+    "dest": "AGENTS.md",
+    "set": "agents-md",
+    "when": null,
+    "vars": [
+      "NAME"
+    ],
+    "rules": [
+      "DOC-008"
+    ]
+  },
+  {
+    "src": "agents-md/CLAUDE.md",
+    "dest": "CLAUDE.md",
+    "set": "agents-md",
+    "when": null,
+    "vars": [],
+    "rules": [
+      "DOC-008"
     ]
   },
   {

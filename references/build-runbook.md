@@ -355,8 +355,8 @@ For every optional part, the model states a verdict first in one line, do it or 
 | CodeRabbit | public repo with a PR flow, advisory only, needs the owner's passkey (REV-004) | staying private, where it is paid |
 | Dependabot auto-merge | coverage enforced at 100, a required CI check, and hash-pinned actions all hold (CI-010) | any of the three is missing; the owner merges Dependabot PRs by hand instead |
 | Hero and social preview | the repo is meant to be found (DOC-007) | private or single-consumer; skip motion unless the owner asks for it |
-| Dependency review (`actions/dependency-review-action`) | public, with any declared dependencies, dev groups count | private, or dependency-free |
-| AGENTS.md | agents will work on the repo | a single-file skill |
+| Dependency review (`actions/dependency-review-action`) | public, with any declared dependencies, dev groups count (CI-011) | private, or dependency-free |
+| AGENTS.md | agents will work on the repo (DOC-008) | a single-file skill |
 
 No outward-facing step, meaning publish, accept an agreement, install an app, change a repo setting, or tag, starts without the owner's explicit go for that item. (PRC-009) Approved items become parallel PRs, one worktree each, using the mechanics named for each part in `references/tools.md`.
 
