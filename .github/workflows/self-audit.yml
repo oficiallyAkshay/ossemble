@@ -1,0 +1,35 @@
+# ossemble audits itself: the same gap table it prints for any other repo,
+# run on this repo on every change. Not required by the branch ruleset,
+# since `ci` already runs the tests that prove every probe; this job is
+# the live run those tests cannot replace.
+name: self-audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: self-audit-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The identity probe reads the commit history.
+          fetch-depth: 0
+          persist-credentials: false
+      # The script is standard library only, so the runner's own python3
+      # is enough; no uv, no sync.
+      - name: audit this repo against its own rules
+        run: python3 scripts/ossemble audit
+      - name: resume reports the finish stage with no regression
+        run: python3 scripts/ossemble resume
