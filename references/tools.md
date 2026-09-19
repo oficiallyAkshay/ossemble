@@ -11,7 +11,7 @@ A few rows are always on whenever their trigger exists in the repo being built, 
 | actionlint | any workflow file exists | free | always once a workflow exists | build, day zero |
 | zizmor | any workflow file exists | free | always once a workflow exists | build, day zero |
 | ruff (`select = ["ALL"]` at finish) (HRD-009) | Python detected | free | conditional, Python pick | build (default rules), finish (full set) |
-| ty (Astral's type checker) | Python detected | free | conditional, Python pick, adopt | finish |
+| ty (Astral's type checker) | Python detected | free | conditional, Python pick, adopted | finish |
 | vulture, with a name whitelist for fixtures | Python detected | free | conditional, Python pick | finish |
 | deptry, with a module-name map | Python detected with declared dependencies | free | conditional, Python pick | finish |
 | pip-audit, its own workflow, outside the gate (CI-005) | Python detected with a `pyproject.toml` | free | conditional, Python pick | finish; weekly and on PRs touching `pyproject.toml` |
@@ -39,7 +39,7 @@ Adopt as a runbook line, not a template file: when the full formatter first runs
 
 Ten community repos surveyed: anthropics/skills, vercel-labs/agent-skills, pypa/pipx, python-attrs/attrs, hynek/structlog, pyca/cryptography, ossf/scorecard-action, zizmorcore/zizmor, step-security/harden-runner, github/ruleset-recipes, plus quick audits of astral-sh/setup-uv, actions/checkout and sethvargo/ratchet.
 
-- **ty**: adopt, conditional Python pick at finish. 13 diagnostics on ossemble, 8 fixed by one config line (the flat import layout under `scripts/ossemble` needs the source root declared), 5 real type findings in about 1,700 lines, about one second to run. Production use: pypa/pipx.
+- **ty**: adopted, conditional Python pick at finish. 30 diagnostics on adoption: 8 layout (the flat import layout under `scripts/ossemble` needs the source root declared), 22 real, about one second to run. Production use: pypa/pipx.
 - **prek**: measured, not adopted. On ossemble's own hooks it ran 0.65s against pre-commit's 0.36 to 0.73s warm, no gain, and all four hooks failed under it in the cloud container. Production use: attrs, structlog. Re-measure only if pre-commit becomes the slow step.
 - **codespell**: measured, not adopted. 9 hits on ossemble, all the deliberate key `optins`, zero real typos.
 

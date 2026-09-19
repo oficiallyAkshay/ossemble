@@ -185,6 +185,17 @@
     ]
   },
   {
+    "src": "finish/.pre-commit-config.yaml",
+    "dest": ".pre-commit-config.yaml",
+    "set": "finish",
+    "when": null,
+    "vars": [],
+    "rules": [
+      "HRD-007",
+      "TST-008"
+    ]
+  },
+  {
     "src": "agents-md/AGENTS.md",
     "dest": "AGENTS.md",
     "set": "agents-md",

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import email.message
+import http.client
+import io
 import json
 import subprocess
 import urllib.error
+import urllib.request
 from typing import Self
 
 import pytest
@@ -284,8 +288,16 @@ def test_run_check_prints_one_stderr_line_and_returns_error_on_failure(capsys) -
 
 def test_no_redirect_handler_refuses_every_redirect_instead_of_following_it() -> None:
     handler = name._NoRedirect()
+    request = urllib.request.Request("https://example.com/")
     with pytest.raises(urllib.error.URLError):
-        handler.redirect_request(None, None, 302, "Found", {}, "https://example.com/elsewhere")
+        handler.redirect_request(
+            request,
+            io.BytesIO(),
+            302,
+            "Found",
+            http.client.HTTPMessage(),
+            "https://example.com/elsewhere",
+        )
 
 
 # --- _fetch --------------------------------------------------------------------------------
@@ -306,7 +318,7 @@ def test_fetch_returns_the_status_and_body_on_success(monkeypatch) -> None:
 
 def test_fetch_turns_an_http_error_into_its_status_code_with_no_body(monkeypatch) -> None:
     def open_fn(url, timeout):
-        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        raise urllib.error.HTTPError(url, 404, "Not Found", email.message.Message(), None)
 
     _patch_opener(monkeypatch, open_fn)
 

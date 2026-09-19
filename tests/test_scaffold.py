@@ -624,19 +624,23 @@ class TestRealTemplatesMatchThisRepo:
     """The templates/ directory this builder owns, stamped against this repo's own stage.
 
     The stage is read from the achieved coverage floor, never assumed: a
-    floor of 100 means this repo is at the finish stage, so pyproject.toml
-    and ci.yml now come from the finish set, while the boot files finish
-    never replaces (gitignore, pre-commit config, dependabot, the pull
-    request template) still come from boot.
+    floor of 100 means this repo is at the finish stage, so pyproject.toml,
+    ci.yml and the pre-commit config now come from the finish set (ty is a
+    default, finish-stage pick for a Python repo, TST-008), while the boot
+    files finish never replaces (gitignore, dependabot, the pull request
+    template) still come from boot.
     """
 
     BOOT_ONLY_DESTS = (
-        ".pre-commit-config.yaml",
         ".gitignore",
         ".github/dependabot.yml",
         ".github/pull_request_template.md",
     )
-    FINISH_REPLACED_DESTS = ("pyproject.toml", ".github/workflows/ci.yml")
+    FINISH_REPLACED_DESTS = (
+        "pyproject.toml",
+        ".github/workflows/ci.yml",
+        ".pre-commit-config.yaml",
+    )
 
     def test_scaffold_reproduces_this_repos_own_gate_files_byte_for_byte(self, tmp_path) -> None:
         floor = _this_repos_coverage_floor()

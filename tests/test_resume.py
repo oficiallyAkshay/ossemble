@@ -11,6 +11,16 @@ import types
 from scripts.ossemble import resume
 
 
+def _set_module_attr(module: types.ModuleType, name: str, value: object) -> None:
+    """Give a stub `ModuleType` an attribute a real module would carry.
+
+    Plain attribute assignment on a `ModuleType` has no declared shape for
+    the type checker to see, so this goes through `__dict__` instead, which
+    is how the attribute would end up there either way.
+    """
+    module.__dict__[name] = value
+
+
 def _all_tools_present(monkeypatch) -> None:
     monkeypatch.setattr(resume.shutil, "which", lambda tool: f"/usr/bin/{tool}")
 
@@ -46,8 +56,10 @@ def _stub_audit(monkeypatch, tmp_path, gap_ids: list[str]) -> None:
     rules_file = tmp_path.parent / f"{tmp_path.name}-rules.json"
     rules_file.write_text("[]\n", encoding="utf-8")
     stub = types.ModuleType("audit")
-    stub.gaps = lambda path, use_api=False: [{"id": gap_id} for gap_id in gap_ids]
-    stub.rules_path = lambda: rules_file
+    _set_module_attr(
+        stub, "gaps", lambda path, use_api=False: [{"id": gap_id} for gap_id in gap_ids]
+    )
+    _set_module_attr(stub, "rules_path", lambda: rules_file)
     monkeypatch.setitem(sys.modules, "audit", stub)
 
 
@@ -189,6 +201,7 @@ def test_read_state_refuses_a_symlinked_state_file(tmp_path) -> None:
     state, error = resume._read_state(tmp_path)
 
     assert state == {}
+    assert error is not None
     assert "symlink" in error
 
 
@@ -200,6 +213,7 @@ def test_read_state_reports_invalid_json(tmp_path) -> None:
     state, error = resume._read_state(tmp_path)
 
     assert state == {}
+    assert error is not None
     assert "could not be read" in error
 
 
@@ -211,6 +225,7 @@ def test_read_state_reports_a_json_value_that_is_not_an_object(tmp_path) -> None
     state, error = resume._read_state(tmp_path)
 
     assert state == {}
+    assert error is not None
     assert "must hold a JSON object" in error
 
 
@@ -224,6 +239,7 @@ def test_read_state_reports_fields_with_the_wrong_shape(tmp_path) -> None:
     state, error = resume._read_state(tmp_path)
 
     assert state == {}
+    assert error is not None
     assert "lowered" in error
     assert "scope" in error
 
@@ -260,7 +276,9 @@ def test_audit_check_reports_not_available_when_gaps_is_missing(monkeypatch, tmp
 
 def test_audit_check_reports_not_available_when_gaps_raises(monkeypatch, tmp_path) -> None:
     stub = types.ModuleType("audit")
-    stub.gaps = lambda path, use_api=False: (_ for _ in ()).throw(RuntimeError("broken"))
+    _set_module_attr(
+        stub, "gaps", lambda path, use_api=False: (_ for _ in ()).throw(RuntimeError("broken"))
+    )
     monkeypatch.setitem(sys.modules, "audit", stub)
     assert resume._audit_check(tmp_path, {}) == ("audit not available", 0, None)
 
@@ -288,6 +306,7 @@ def test_audit_check_reports_none_and_a_new_baseline_when_none_was_recorded(
 
     assert regressions == "none"
     assert gap_count == 2
+    assert new_baseline is not None
     assert new_baseline["gaps"] == ["CI-001", "STR-001"]
     assert new_baseline["commit"]
     assert new_baseline["hash"]
@@ -304,6 +323,7 @@ def test_audit_check_reports_a_regression_for_a_gap_absent_from_the_baseline(
 
     assert regressions == "STR-001"
     assert gap_count == 2
+    assert new_baseline is not None
     assert new_baseline["gaps"] == ["CI-001", "STR-001"]
 
 
@@ -316,6 +336,7 @@ def test_audit_check_reports_none_when_the_baseline_has_no_new_gaps(monkeypatch,
 
     assert regressions == "none"
     assert gap_count == 1
+    assert new_baseline is not None
     assert new_baseline["gaps"] == ["CI-001"]
 
 
@@ -348,7 +369,7 @@ def test_rules_hash_hashes_the_rules_file_contents(tmp_path) -> None:
     rules_file = tmp_path / "rules.json"
     rules_file.write_text("[]\n", encoding="utf-8")
     stub = types.ModuleType("audit")
-    stub.rules_path = lambda: rules_file
+    _set_module_attr(stub, "rules_path", lambda: rules_file)
 
     import hashlib
 
@@ -357,7 +378,7 @@ def test_rules_hash_hashes_the_rules_file_contents(tmp_path) -> None:
 
 def test_rules_hash_is_none_when_the_rules_file_cannot_be_read(tmp_path) -> None:
     stub = types.ModuleType("audit")
-    stub.rules_path = lambda: tmp_path / "missing.json"
+    _set_module_attr(stub, "rules_path", lambda: tmp_path / "missing.json")
     assert resume._rules_hash(stub) is None
 
 
