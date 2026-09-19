@@ -27,7 +27,7 @@ def _write_pyproject(tmp_path, fail_under) -> None:
     (tmp_path / "pyproject.toml").write_text(f"[tool.coverage.report]\nfail_under = {fail_under}\n")
 
 
-def _init_git_repo(tmp_path, commit: bool = True) -> None:
+def _init_git_repo(tmp_path, *, commit: bool = True) -> None:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(
         ["git", "config", "user.email", "1+owner@users.noreply.github.com"],
@@ -47,7 +47,7 @@ def _stub_audit(monkeypatch, tmp_path, gap_ids: list[str]) -> None:
     rules_file.write_text("[]\n", encoding="utf-8")
     stub = types.ModuleType("audit")
     stub.gaps = lambda path, use_api=False: [{"id": gap_id} for gap_id in gap_ids]
-    stub._rules_path = lambda: rules_file
+    stub.rules_path = lambda: rules_file
     monkeypatch.setitem(sys.modules, "audit", stub)
 
 
@@ -243,7 +243,7 @@ def test_read_state_accepts_a_correctly_shaped_state_file(tmp_path) -> None:
     assert error is None
 
 
-# --- _audit_check ----------------------------------------------------------------------------------
+# --- _audit_check ---------------------------------------------------------------------------------
 
 
 def test_audit_check_reports_not_available_when_audit_cannot_be_imported(
@@ -329,7 +329,8 @@ def test_head_commit_is_none_outside_a_git_repo(tmp_path) -> None:
 def test_head_commit_returns_the_sha_for_a_repo_with_a_commit(tmp_path) -> None:
     _init_git_repo(tmp_path)
     commit = resume._head_commit(tmp_path)
-    assert commit and len(commit) == 40
+    assert commit is not None
+    assert len(commit) == 40
 
 
 def test_head_commit_is_none_when_git_cannot_run(monkeypatch, tmp_path) -> None:
@@ -347,7 +348,7 @@ def test_rules_hash_hashes_the_rules_file_contents(tmp_path) -> None:
     rules_file = tmp_path / "rules.json"
     rules_file.write_text("[]\n", encoding="utf-8")
     stub = types.ModuleType("audit")
-    stub._rules_path = lambda: rules_file
+    stub.rules_path = lambda: rules_file
 
     import hashlib
 
@@ -356,7 +357,7 @@ def test_rules_hash_hashes_the_rules_file_contents(tmp_path) -> None:
 
 def test_rules_hash_is_none_when_the_rules_file_cannot_be_read(tmp_path) -> None:
     stub = types.ModuleType("audit")
-    stub._rules_path = lambda: tmp_path / "missing.json"
+    stub.rules_path = lambda: tmp_path / "missing.json"
     assert resume._rules_hash(stub) is None
 
 
@@ -432,7 +433,7 @@ def test_write_baseline_swallows_an_oserror_while_writing(monkeypatch, tmp_path)
     assert not (tmp_path / ".ossemble" / "state.json").exists()
 
 
-# --- _next_step -------------------------------------------------------------------------------------
+# --- _next_step -----------------------------------------------------------------------------------
 
 
 def test_next_step_asks_to_fix_the_environment_first(monkeypatch) -> None:
@@ -480,7 +481,7 @@ def test_next_step_at_the_build_stage_with_nothing_lowered() -> None:
     assert step == "continue the build stage; read references/build-runbook.md"
 
 
-# --- _format_report ---------------------------------------------------------------------------------
+# --- _format_report -------------------------------------------------------------------------------
 
 
 def test_format_report_lists_the_missing_tools_and_identity_problem_when_not_ok() -> None:
@@ -556,7 +557,7 @@ def test_format_report_shows_the_coverage_floor_and_lowered_entries_when_present
     assert any("coverage (100 -> 70): still building" in line for line in lines)
 
 
-# --- run(): end to end ------------------------------------------------------------------------------
+# --- run(): end to end ----------------------------------------------------------------------------
 
 
 def test_run_returns_zero_and_prints_text_lines_for_a_clean_repo(

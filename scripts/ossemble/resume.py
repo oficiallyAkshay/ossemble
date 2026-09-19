@@ -24,15 +24,21 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
+    from types import ModuleType
 
 _TOOLS = ("git", "gh", "uv")
 _NOREPLY_SUFFIX = "@users.noreply.github.com"
 _STATE_RELATIVE_PATH = ".ossemble/state.json"
 _LIST_KEYS = ("shapes", "gos", "lowered", "findings")
 _DICT_KEYS = ("scope", "optins", "prior_art", "checks")
+_FINISH_COVERAGE_FLOOR = 100
 
 
-def add_parser(subparsers):
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the `resume` subcommand and wire it to `run`."""
     parser = subparsers.add_parser("resume", help="check the environment, stage and next step")
     parser.add_argument("path", nargs="?", default=".", help="the repo to resume (default: .)")
@@ -43,7 +49,7 @@ def add_parser(subparsers):
     return parser
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     """Print the environment, stage, regressions, lowered gates and next step."""
     path = Path(args.path)
 
@@ -89,8 +95,8 @@ def _check_environment(path: Path) -> dict:
 def _has_noreply_identity(path: Path) -> bool:
     """Check that the repo-local git identity is a no-reply GitHub address."""
     try:
-        result = subprocess.run(
-            ["git", "-C", str(path), "config", "user.email"],
+        result = subprocess.run(  # noqa: S603 -- fixed argv, never a shell
+            ["git", "-C", str(path), "config", "user.email"],  # noqa: S607 -- git is trusted
             capture_output=True,
             text=True,
             timeout=10,
@@ -113,7 +119,8 @@ def _read_stage(path: Path) -> tuple[str, float | None]:
     fail_under = data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under")
     if not isinstance(fail_under, (int, float)) or isinstance(fail_under, bool):
         return "unknown", None
-    return ("finish" if fail_under >= 100 else "build"), fail_under
+    stage = "finish" if fail_under >= _FINISH_COVERAGE_FLOOR else "build"
+    return stage, fail_under
 
 
 def _read_state(path: Path) -> tuple[dict, str | None]:
@@ -176,8 +183,8 @@ def _audit_check(path: Path, state: dict) -> tuple[str, int, dict | None]:
 def _head_commit(path: Path) -> str | None:
     """The repo's current commit sha, or None when it has no commits yet."""
     try:
-        result = subprocess.run(
-            ["git", "-C", str(path), "rev-parse", "HEAD"],
+        result = subprocess.run(  # noqa: S603 -- fixed argv, never a shell
+            ["git", "-C", str(path), "rev-parse", "HEAD"],  # noqa: S607 -- git is trusted
             capture_output=True,
             text=True,
             timeout=10,
@@ -190,10 +197,10 @@ def _head_commit(path: Path) -> str | None:
     return result.stdout.strip()
 
 
-def _rules_hash(audit_module) -> str | None:
+def _rules_hash(audit_module: ModuleType) -> str | None:
     """A sha256 of the rules.json audit scored against."""
     try:
-        text = audit_module._rules_path().read_text(encoding="utf-8")
+        text = audit_module.rules_path().read_text(encoding="utf-8")
     except OSError:
         return None
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -242,7 +249,10 @@ def _next_step(environment: dict, stage: str, lowered: list) -> str:
         names = ", ".join(sorted(str(entry.get("gate", "?")) for entry in lowered))
         return f"raise the lowered gate(s) ({names}) back to their finish value"
     if stage == "finish":
-        return "the repo is at the finish stage; read references/build-runbook.md from the review step on"
+        return (
+            "the repo is at the finish stage; read references/build-runbook.md "
+            "from the review step on"
+        )
     return "continue the build stage; read references/build-runbook.md"
 
 
@@ -265,12 +275,18 @@ def _format_report(report: dict) -> list[str]:
     lines.append(f"gaps: {report['gaps']}")
     lines.append(f"regressions: {report['regressions']}")
     if report["lowered"]:
-        entries = "; ".join(
-            f"{entry.get('gate', '?')} ({entry.get('from', '?')} -> {entry.get('to', '?')}): {entry.get('why', '')}"
-            for entry in report["lowered"]
-        )
+        entries = "; ".join(_format_lowered_entry(entry) for entry in report["lowered"])
         lines.append(f"lowered: {entries}")
     else:
         lines.append("lowered: none")
     lines.append(f"next step: {report['next_step']}")
     return lines
+
+
+def _format_lowered_entry(entry: dict) -> str:
+    """Format one `lowered` state entry as `gate (from -> to): why`."""
+    gate = entry.get("gate", "?")
+    from_value = entry.get("from", "?")
+    to_value = entry.get("to", "?")
+    why = entry.get("why", "")
+    return f"{gate} ({from_value} -> {to_value}): {why}"

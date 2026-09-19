@@ -818,8 +818,8 @@
   },
   {
     "id": "STR-003",
-    "text": "Keep each human-facing doc under 300 lines.",
-    "basis": "prompt section 4, size targets",
+    "text": "Keep each human doc, README.md and CONTRIBUTING.md, under 300 lines.",
+    "basis": "prompt section 4, size targets; references/ and agents/ are read by the model, not a size target, so the limit binds only the docs a person reads",
     "category": "structure and leanness",
     "kind": "default",
     "stage": "finish",
@@ -828,8 +828,8 @@
   },
   {
     "id": "STR-004",
-    "text": "Keep the repo under 250 KB.",
-    "basis": "prompt section 4, size targets",
+    "text": "Keep the repo under 250 KB, counting git-tracked bytes outside tests/ and examples/.",
+    "basis": "prompt section 4, size targets; the four-to-one test rule makes tests the bulk of the tree, and examples/ holds a stamped fixture, not source",
     "category": "structure and leanness",
     "kind": "default",
     "stage": "finish",

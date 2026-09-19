@@ -20,7 +20,7 @@ def _this_repos_coverage_floor() -> str:
     return str(data["tool"]["coverage"]["report"]["fail_under"])
 
 
-def _make_args(path=".", set_name="boot", variables=None, check=False) -> argparse.Namespace:
+def _make_args(*, path=".", set_name="boot", variables=None, check=False) -> argparse.Namespace:
     return argparse.Namespace(
         path=path, set_name=set_name, variables=list(variables or []), check=check
     )
@@ -592,32 +592,56 @@ def test_run_refuses_to_write_through_a_symlinked_parent_directory(
     assert list(elsewhere.iterdir()) == []
 
 
-class TestRealBootTemplatesMatchThisRepo:
-    """The templates/ directory this builder owns, stamped against itself."""
+class TestRealTemplatesMatchThisRepo:
+    """The templates/ directory this builder owns, stamped against this repo's own stage.
 
-    def test_scaffold_boot_reproduces_this_repos_own_gate_files_byte_for_byte(
-        self, tmp_path
-    ) -> None:
-        exit_code = scaffold.run(
+    The stage is read from the achieved coverage floor, never assumed: a
+    floor of 100 means this repo is at the finish stage, so pyproject.toml
+    and ci.yml now come from the finish set, while the boot files finish
+    never replaces (gitignore, pre-commit config, dependabot, the pull
+    request template) still come from boot.
+    """
+
+    BOOT_ONLY_DESTS = (
+        ".pre-commit-config.yaml",
+        ".gitignore",
+        ".github/dependabot.yml",
+        ".github/pull_request_template.md",
+    )
+    FINISH_REPLACED_DESTS = ("pyproject.toml", ".github/workflows/ci.yml")
+
+    def test_scaffold_reproduces_this_repos_own_gate_files_byte_for_byte(self, tmp_path) -> None:
+        floor = _this_repos_coverage_floor()
+        variables = ["NAME=ossemble"]
+
+        boot_exit = scaffold.run(
             _make_args(
                 path=str(tmp_path),
                 set_name="boot",
-                variables=["NAME=ossemble", f"COVERAGE_FLOOR={_this_repos_coverage_floor()}"],
+                variables=[*variables, f"COVERAGE_FLOOR={floor}"],
             )
         )
+        assert boot_exit == 0
 
-        assert exit_code == 0
-        for dest in (
-            "pyproject.toml",
-            ".pre-commit-config.yaml",
-            ".gitignore",
-            ".github/workflows/ci.yml",
-            ".github/dependabot.yml",
-            ".github/pull_request_template.md",
-        ):
+        at_finish_stage = floor == "100"
+        if at_finish_stage:
+            # The finish stamp still needs COVERAGE_FLOOR so the current,
+            # boot-stamped disk content is recognised as a known prior
+            # stamp rather than reported as drift; finish's own template
+            # ignores the variable, since it has no {{COVERAGE_FLOOR}}.
+            finish_exit = scaffold.run(
+                _make_args(
+                    path=str(tmp_path),
+                    set_name="finish",
+                    variables=[*variables, f"COVERAGE_FLOOR={floor}"],
+                )
+            )
+            assert finish_exit == 0
+
+        for dest in self.BOOT_ONLY_DESTS + self.FINISH_REPLACED_DESTS:
             stamped = (tmp_path / dest).read_bytes()
             live = (REPO_ROOT / dest).read_bytes()
-            assert stamped == live, f"{dest} has drifted from the boot template"
+            assert stamped == live, f"{dest} has drifted from its template"
 
     def test_scaffold_boot_is_idempotent_on_this_repos_own_variables(self, tmp_path) -> None:
         args = _make_args(path=str(tmp_path), set_name="boot", variables=["NAME=ossemble"])

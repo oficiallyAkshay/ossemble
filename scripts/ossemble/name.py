@@ -17,11 +17,19 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
+    from collections.abc import Callable
+    from typing import NoReturn
 
 _CANDIDATE_RE = re.compile(r"^[a-z][a-z0-9]*$")
 _TIMEOUT_SECONDS = 10
 _USER_AGENT = "ossemble-name-check"
 _CHECK_ORDER = ("npm", "pypi", "github_user", "github_repo")
+_HTTP_OK = 200
+_HTTP_NOT_FOUND = 404
 
 # Anything that means "the check could not be completed", never "it is
 # taken" or "it is free". Caught in one place so every network path fails
@@ -35,7 +43,7 @@ _CHECK_ERRORS = (
 )
 
 
-def add_parser(subparsers):
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the `name` subcommand and wire it to `run`."""
     parser = subparsers.add_parser(
         "name", help="screen candidate repo names on npm, PyPI and GitHub"
@@ -50,7 +58,7 @@ def add_parser(subparsers):
     return parser
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     """Validate every candidate, screen each one, and print the results."""
     for candidate in args.candidates:
         if not _CANDIDATE_RE.match(candidate):
@@ -62,7 +70,8 @@ def run(args) -> int:
 
     use_gh = shutil.which("gh") is not None
     results = sorted(
-        (_screen(candidate, use_gh) for candidate in args.candidates), key=lambda r: r["candidate"]
+        (_screen(candidate, use_gh=use_gh) for candidate in args.candidates),
+        key=lambda r: r["candidate"],
     )
 
     if args.json:
@@ -74,13 +83,13 @@ def run(args) -> int:
     return 0 if all(result["free"] for result in results) else 1
 
 
-def _screen(candidate: str, use_gh: bool) -> dict:
+def _screen(candidate: str, *, use_gh: bool) -> dict:
     """Run every check for one candidate and combine them into one result."""
     checks = {
         "npm": _check_npm(candidate),
         "pypi": _check_pypi(candidate),
-        "github_user": _check_github_user(candidate, use_gh),
-        "github_repo": _check_github_repo(candidate, use_gh),
+        "github_user": _check_github_user(candidate, use_gh=use_gh),
+        "github_repo": _check_github_repo(candidate, use_gh=use_gh),
     }
     if any(checks[name] == "taken" for name in _CHECK_ORDER):
         status = "taken"
@@ -103,7 +112,7 @@ def _format_row(result: dict) -> str:
     return f"{result['candidate']}  {result['status'].upper()}  {detail}"
 
 
-def _run_check(candidate: str, check_name: str, probe) -> str:
+def _run_check(candidate: str, check_name: str, probe: Callable[[], str]) -> str:
     """Run one probe, turning any failure into a single stderr line."""
     try:
         return probe()
@@ -117,7 +126,15 @@ def _run_check(candidate: str, check_name: str, probe) -> str:
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Refuse every redirect instead of following it."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(
+        self,
+        _req: urllib.request.Request,
+        _fp: object,
+        _code: int,
+        _msg: str,
+        _headers: object,
+        newurl: str,
+    ) -> NoReturn:
         raise urllib.error.URLError(f"refusing to follow a redirect to {newurl}")
 
 
@@ -126,7 +143,9 @@ def _fetch(url: str) -> tuple[int, bytes]:
     if not url.startswith("https://"):
         raise ValueError(f"refusing a non-https URL: {url}")
     opener = urllib.request.build_opener(_NoRedirect())
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    request = urllib.request.Request(  # noqa: S310 -- https is checked just above
+        url, headers={"User-Agent": _USER_AGENT}
+    )
     try:
         with opener.open(request, timeout=_TIMEOUT_SECONDS) as response:
             return response.status, response.read()
@@ -136,9 +155,9 @@ def _fetch(url: str) -> tuple[int, bytes]:
 
 def _status_from_code(code: int) -> str:
     """Map an HTTP status code to taken, free or error for an existence check."""
-    if code == 200:
+    if code == _HTTP_OK:
         return "taken"
-    if code == 404:
+    if code == _HTTP_NOT_FOUND:
         return "free"
     return "error"
 
@@ -191,8 +210,8 @@ def _check_pypi(candidate: str) -> str:
 
 def _run_gh(path_and_query: str) -> subprocess.CompletedProcess:
     """Run `gh api <path>`, never raising for a non-zero exit."""
-    return subprocess.run(
-        ["gh", "api", path_and_query],
+    return subprocess.run(  # noqa: S603 -- fixed argv, never a shell
+        ["gh", "api", path_and_query],  # noqa: S607 -- gh is a trusted binary name
         capture_output=True,
         text=True,
         timeout=_TIMEOUT_SECONDS,
@@ -200,7 +219,7 @@ def _run_gh(path_and_query: str) -> subprocess.CompletedProcess:
     )
 
 
-def _check_github_user(candidate: str, use_gh: bool) -> str:
+def _check_github_user(candidate: str, *, use_gh: bool) -> str:
     """Check whether a GitHub user or org owns this exact login."""
 
     def probe() -> str:
@@ -218,7 +237,7 @@ def _check_github_user(candidate: str, use_gh: bool) -> str:
     return _run_check(candidate, "github_user", probe)
 
 
-def _check_github_repo(candidate: str, use_gh: bool) -> str:
+def _check_github_repo(candidate: str, *, use_gh: bool) -> str:
     """Check GitHub for a repository whose name matches the candidate exactly."""
 
     def probe() -> str:
@@ -230,7 +249,7 @@ def _check_github_repo(candidate: str, use_gh: bool) -> str:
             payload = json.loads(result.stdout)
         else:
             status, body = _fetch(f"https://api.github.com/search/repositories?q={query}")
-            if status != 200:
+            if status != _HTTP_OK:
                 return "error"
             payload = json.loads(body.decode("utf-8"))
         names = {item["name"].lower() for item in payload.get("items", [])}

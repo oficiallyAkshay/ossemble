@@ -13,13 +13,17 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
 
 FAIL_UNDER_LINE = re.compile(
     r"^(?P<prefix>fail_under\s*=\s*)(?P<value>\d+)(?P<trailing>[ \t]*)$", re.MULTILINE
 )
 
 
-def add_parser(subparsers):
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the `floor` subcommand and wire it to `run`."""
     parser = subparsers.add_parser(
         "floor", help="raise the coverage floor in pyproject.toml to the achieved number"
@@ -35,52 +39,82 @@ def add_parser(subparsers):
     return parser
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     """Raise `pyproject.toml`'s `fail_under` to the achieved coverage, never lowering it."""
-    root = Path(args.path)
+    root = _resolve_target_root(args.path)
+    if root is None:
+        return 1
+
+    achieved = _resolve_achieved_coverage(args.coverage_xml)
+    if achieved is None:
+        return 1
+
+    message = _raise_fail_under(root / "pyproject.toml", achieved)
+    if message is None:
+        return 1
+
+    print(message)
+    return 0
+
+
+def _resolve_target_root(path_arg: str) -> Path | None:
+    """Resolve `path_arg` to a real directory, or print one line and return None."""
+    root = Path(path_arg)
     if root.is_symlink():
         print("ossemble floor: refusing to follow a symlink as the target path", file=sys.stderr)
-        return 1
+        return None
     if not root.is_dir():
-        print(f"ossemble floor: {args.path} is not a directory", file=sys.stderr)
-        return 1
-    root = root.resolve()
+        print(f"ossemble floor: {path_arg} is not a directory", file=sys.stderr)
+        return None
+    return root.resolve()
 
-    coverage_xml = Path(args.coverage_xml)
+
+def _resolve_achieved_coverage(coverage_xml_arg: str) -> int | None:
+    """Read the achieved coverage percentage from `coverage_xml_arg`.
+
+    Prints one line and returns None on failure.
+    """
+    coverage_xml = Path(coverage_xml_arg)
     if coverage_xml.is_symlink():
         print(
             "ossemble floor: refusing to follow a symlink as the coverage XML file", file=sys.stderr
         )
-        return 1
+        return None
 
     achieved = _achieved_percent(coverage_xml)
     if achieved is None:
         print(
-            f"ossemble floor: cannot read achieved coverage from {args.coverage_xml}",
+            f"ossemble floor: cannot read achieved coverage from {coverage_xml_arg}",
             file=sys.stderr,
         )
-        return 1
+        return None
+    return achieved
 
-    pyproject_path = root / "pyproject.toml"
+
+def _raise_fail_under(pyproject_path: Path, achieved: int) -> str | None:
+    """Raise `fail_under` in `pyproject_path` to `achieved`, or print one line and return None.
+
+    Returns the one line to print on success, whether or not the floor
+    actually moved; never lowers `fail_under`.
+    """
     if pyproject_path.is_symlink():
         print("ossemble floor: refusing to follow a symlink as pyproject.toml", file=sys.stderr)
-        return 1
+        return None
     try:
         text = pyproject_path.read_text(encoding="utf-8")
     except OSError as exc:
         print(f"ossemble floor: cannot read {pyproject_path}: {exc}", file=sys.stderr)
-        return 1
+        return None
 
     match = FAIL_UNDER_LINE.search(text)
     if not match:
         print("ossemble floor: no fail_under line found in pyproject.toml", file=sys.stderr)
-        return 1
+        return None
 
     current = int(match.group("value"))
     new_value = max(current, achieved)
     if new_value == current:
-        print(f"fail_under stays at {current}; achieved coverage is {achieved}")
-        return 0
+        return f"fail_under stays at {current}; achieved coverage is {achieved}"
 
     updated = (
         text[: match.start()]
@@ -91,15 +125,17 @@ def run(args) -> int:
         pyproject_path.write_text(updated, encoding="utf-8")
     except OSError as exc:
         print(f"ossemble floor: cannot write {pyproject_path}: {exc}", file=sys.stderr)
-        return 1
+        return None
 
-    print(f"fail_under raised from {current} to {new_value}")
-    return 0
+    return f"fail_under raised from {current} to {new_value}"
 
 
 def _achieved_percent(coverage_xml: Path) -> int | None:
     try:
-        tree = ET.parse(coverage_xml)
+        # This repo's own coverage.py output, never a document from outside
+        # the build; defusedxml is not an option since only the standard
+        # library is a runtime dependency here.
+        tree = ET.parse(coverage_xml)  # noqa: S314 -- this repo's own trusted output
     except (OSError, ET.ParseError):
         return None
     root_element = tree.getroot()
