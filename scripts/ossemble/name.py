@@ -2,9 +2,12 @@
 
 Screens each candidate name against npm, PyPI (and its normalised twins),
 a GitHub user or org, and an exact-name GitHub repository search. A
-candidate is free only when every check comes back free. Registries are
+candidate is free only when every check comes back free on every
+candidate; a taken, invalid or errored check exits 1. Registries are
 checked before GitHub, and GitHub calls go through `gh api` when it is on
-PATH, falling back to a plain unauthenticated request otherwise.
+PATH. When `gh api` itself is refused or otherwise fails for a GitHub
+check, that check falls back once to a plain unauthenticated request
+against the public GitHub API before it is counted as an error.
 """
 
 from __future__ import annotations
@@ -219,8 +222,22 @@ def _run_gh(path_and_query: str) -> subprocess.CompletedProcess:
     )
 
 
+def _note_fallback(candidate: str, check_name: str, reason: str) -> None:
+    """Print the one stderr line announcing that a check is using the fallback route."""
+    print(
+        f"ossemble name: {check_name} check for '{candidate}': gh api refused ({reason}), "
+        "falling back to the public GitHub API",
+        file=sys.stderr,
+    )
+
+
+def _repo_names(payload: dict) -> set[str]:
+    """Lower-case the repository names in a GitHub search response payload."""
+    return {item["name"].lower() for item in payload.get("items", [])}
+
+
 def _check_github_user(candidate: str, *, use_gh: bool) -> str:
-    """Check whether a GitHub user or org owns this exact login."""
+    """Check whether a GitHub user or org owns this exact login, gh first then the API."""
 
     def probe() -> str:
         encoded = urllib.parse.quote(candidate, safe="")
@@ -230,7 +247,7 @@ def _check_github_user(candidate: str, *, use_gh: bool) -> str:
                 return "taken"
             if "404" in result.stderr:
                 return "free"
-            raise RuntimeError(result.stderr.strip() or "gh api users failed")
+            _note_fallback(candidate, "github_user", result.stderr.strip() or "gh api users failed")
         status, _ = _fetch(f"https://api.github.com/users/{encoded}")
         return _status_from_code(status)
 
@@ -238,21 +255,22 @@ def _check_github_user(candidate: str, *, use_gh: bool) -> str:
 
 
 def _check_github_repo(candidate: str, *, use_gh: bool) -> str:
-    """Check GitHub for a repository whose name matches the candidate exactly."""
+    """Check GitHub for a repository whose name matches the candidate, gh first then the API."""
 
     def probe() -> str:
         query = urllib.parse.quote(f"{candidate} in:name", safe="")
         if use_gh:
             result = _run_gh(f"search/repositories?q={query}")
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr.strip() or "gh api search failed")
-            payload = json.loads(result.stdout)
-        else:
-            status, body = _fetch(f"https://api.github.com/search/repositories?q={query}")
-            if status != _HTTP_OK:
-                return "error"
-            payload = json.loads(body.decode("utf-8"))
-        names = {item["name"].lower() for item in payload.get("items", [])}
-        return "taken" if candidate in names else "free"
+            if result.returncode == 0:
+                payload = json.loads(result.stdout)
+                return "taken" if candidate in _repo_names(payload) else "free"
+            _note_fallback(
+                candidate, "github_repo", result.stderr.strip() or "gh api search failed"
+            )
+        status, body = _fetch(f"https://api.github.com/search/repositories?q={query}")
+        if status != _HTTP_OK:
+            return "error"
+        payload = json.loads(body.decode("utf-8"))
+        return "taken" if candidate in _repo_names(payload) else "free"
 
     return _run_check(candidate, "github_repo", probe)
