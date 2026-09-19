@@ -323,6 +323,23 @@ def _steps(text: str) -> list[str]:
     return chunks
 
 
+_ON_LINE = re.compile(r"^on:[ \t]*(.*)$", re.MULTILINE)
+
+
+def _on_triggers(text: str) -> set[str]:
+    """The event names a workflow's `on:` section declares, block or inline."""
+    line_match = _ON_LINE.search(text)
+    if not line_match:
+        return set()
+    inline = line_match.group(1).strip()
+    if inline:
+        return set(re.findall(r"[\w-]+", inline))
+    rest = text[line_match.end() :]
+    body_match = re.match(r"\n(.*?)(?=\n\S|\Z)", rest, re.DOTALL)
+    body = body_match.group(1) if body_match else ""
+    return set(re.findall(r"^  ([\w-]+):", body, re.MULTILINE))
+
+
 def _jobs(text: str) -> dict[str, str]:
     """Split a workflow's raw text into one chunk per top-level job."""
     jobs_match = re.search(r"^jobs:\s*$", text, re.MULTILINE)
@@ -497,8 +514,16 @@ def checkout_persist_credentials_false(root: Path, _facts: dict) -> ProbeResult:
     return None
 
 
+ZIZMOR_UNPINNED_IGNORE = re.compile(r"zizmor:\s*ignore\[unpinned-uses\]\s*(\S.*)?")
+
+
 def actions_pinned_to_full_sha_with_version_comment(root: Path, _facts: dict) -> ProbeResult:
-    """Confirm every `uses:` is pinned to a full commit SHA with a version comment."""
+    """Confirm every `uses:` is pinned to a full commit SHA with a version comment.
+
+    A deliberate unpinned self-reference passes when the same line carries
+    `zizmor: ignore[unpinned-uses]` followed by at least one word of
+    reason; an ignore with no reason still fails.
+    """
     pin_pattern = re.compile(r"uses:\s*([^\s#]+)@([0-9a-fA-F]{40})(\s*#\s*(\S.*))?")
     for path in _workflow_files(root):
         text = _read_text(path) or ""
@@ -509,11 +534,15 @@ def actions_pinned_to_full_sha_with_version_comment(root: Path, _facts: dict) ->
             if not uses_match or uses_match.group(1).startswith("./"):
                 continue
             pinned = pin_pattern.search(line)
-            if not pinned or not pinned.group(4):
-                return (
-                    str(path.relative_to(root)),
-                    f"not pinned to a full SHA with a version comment: {line.strip()}",
-                )
+            if pinned and pinned.group(4):
+                continue
+            ignore_match = ZIZMOR_UNPINNED_IGNORE.search(line)
+            if ignore_match and ignore_match.group(1):
+                continue
+            return (
+                str(path.relative_to(root)),
+                f"not pinned to a full SHA with a version comment: {line.strip()}",
+            )
     return None
 
 
@@ -601,19 +630,32 @@ def ruff_select_all_with_ignores_justified(root: Path, _facts: dict) -> ProbeRes
 
 
 def concurrency_keyed_by_ref_on_pr_and_sha_on_push(root: Path, _facts: dict) -> ProbeResult:
-    """Confirm workflow concurrency is keyed by ref on pull requests and sha on pushes."""
+    """Confirm concurrency is keyed by ref on pull requests and sha on pushes.
+
+    Only the triggers a workflow actually declares bind: a workflow with no
+    pull_request and no push trigger, such as one run only by schedule,
+    workflow_dispatch or workflow_call, has no such run to key and is
+    exempt.
+    """
     for path in _workflow_files(root):
         text = _read_text(path) or ""
+        triggers = _on_triggers(text)
+        needs_ref = "pull_request" in triggers
+        needs_sha = "push" in triggers
+        if not needs_ref and not needs_sha:
+            continue
         match = re.search(r"^concurrency:\s*$(.*?)(^\S|\Z)", text, re.MULTILINE | re.DOTALL)
         if not match:
             return (str(path.relative_to(root)), "no concurrency block")
         block = match.group(1)
-        if "github.ref" not in block or "github.sha" not in block:
+        if needs_ref and "github.ref" not in block:
             return (
                 str(path.relative_to(root)),
-                "concurrency is not keyed by ref on pull requests and sha on pushes",
+                "concurrency is not keyed by ref on pull requests",
             )
-        if "cancel-in-progress" not in block:
+        if needs_sha and "github.sha" not in block:
+            return (str(path.relative_to(root)), "concurrency is not keyed by sha on pushes")
+        if needs_ref and "cancel-in-progress" not in block:
             return (str(path.relative_to(root)), "concurrency has no cancel-in-progress")
     return None
 
@@ -757,15 +799,25 @@ def _python_source_files(root: Path) -> list[Path]:
 
 
 def zero_tokens_beyond_builtin_github_token(root: Path, _facts: dict) -> ProbeResult:
-    """Confirm no workflow references a secret beyond the built-in GITHUB_TOKEN."""
+    """Confirm no workflow references a secret beyond the built-in GITHUB_TOKEN.
+
+    A secret name the owner recorded under `optins` in `.ossemble/state.json`
+    (a list of names, or an object keyed by name) is not a gap.
+    """
+    state = _load_json(root / ".ossemble" / "state.json")
+    optins = state.get("optins") if isinstance(state, dict) else None
+    allowed = set(optins) if isinstance(optins, (list, dict)) else set()
     for path in _workflow_files(root):
         text = _read_text(path) or ""
         for match in re.finditer(r"secrets\.([A-Za-z0-9_]+)", text):
-            if match.group(1) != "GITHUB_TOKEN":
-                return (
-                    str(path.relative_to(root)),
-                    f"uses secrets.{match.group(1)} beyond the built-in token",
-                )
+            name = match.group(1)
+            if name == "GITHUB_TOKEN" or name in allowed:
+                continue
+            message = (
+                f"uses secrets.{name} beyond the built-in token, "
+                "unless recorded under optins in .ossemble/state.json"
+            )
+            return (str(path.relative_to(root)), message)
     return None
 
 
@@ -801,14 +853,6 @@ def no_gate_lowering_left_open_at_finish_stage(root: Path, _facts: dict) -> Prob
     lowered = state.get("lowered")
     if lowered:
         return (".ossemble/state.json", f"a gate is still recorded as lowered: {lowered}")
-    return None
-
-
-def no_security_md(root: Path, _facts: dict) -> ProbeResult:
-    """Never write `SECURITY.md`."""
-    for candidate in ("SECURITY.md", ".github/SECURITY.md"):
-        if (root / candidate).exists():
-            return (candidate, "SECURITY.md exists, but ossemble never stamps one")
     return None
 
 
@@ -1059,7 +1103,6 @@ PROBES = {
         commit_identity_is_noreply,
         state_file_holds_only_allowed_keys,
         no_gate_lowering_left_open_at_finish_stage,
-        no_security_md,
         coverage_floor_at_least_seventy,
         coverage_floor_is_100_line_and_branch,
         pragma_no_cover_only_on_main_guard_with_reason,

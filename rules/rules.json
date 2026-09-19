@@ -21,7 +21,7 @@
   },
   {
     "id": "CI-003",
-    "text": "Key workflow concurrency by ref on pull requests with cancel-in-progress, and by commit sha on pushes.",
+    "text": "Key workflow concurrency by ref on pull requests with cancel-in-progress, and by commit sha on pushes, for any workflow whose `on:` includes pull_request or push; a workflow triggered only by schedule, workflow_dispatch or workflow_call has no such run to key and is exempt.",
     "basis": "prompt section 8",
     "category": "gates and CI",
     "kind": "default",
@@ -279,7 +279,7 @@
   },
   {
     "id": "HRD-005",
-    "text": "Pin every `uses:` to a full commit SHA with a version comment, and resolve an annotated tag to the commit it names, not the tag object.",
+    "text": "Pin every `uses:` to a full commit SHA with a version comment, and resolve an annotated tag to the commit it names, not the tag object; a deliberate unpinned self-reference is allowed only with `zizmor: ignore[unpinned-uses]` and at least one word of reason on the same line.",
     "basis": "prompt section 6; HANDOFF new material for rules plus audit",
     "category": "hardening",
     "kind": "default",
@@ -390,13 +390,12 @@
   },
   {
     "id": "NO-002",
-    "text": "Never write `SECURITY.md`.",
+    "text": "ossemble never stamps a SECURITY.md and never recommends private vulnerability reporting; a repo that has one keeps it.",
     "basis": "owner decision item 12: none at all, not stamped, not a default",
     "category": "the no-list",
     "kind": "default",
     "stage": "build",
-    "check": "audit",
-    "probe": "no_security_md"
+    "check": "judgment"
   },
   {
     "id": "NO-003",
