@@ -581,24 +581,61 @@ def test_git_run_git_is_the_one_wrapper_audit_and_resume_both_share(tmp_path) ->
 
 
 def test_steps_splits_multiple_list_items_by_dedent() -> None:
-    text = "- one\n  detail one\n- two\n  detail two\n- three\n"
+    text = "steps:\n  - one\n    detail one\n  - two\n    detail two\n  - three\n"
 
     chunks = audit._steps(text)
 
     assert len(chunks) == 3
-    assert chunks[0].startswith("- one\n  detail one\n")
-    assert chunks[1].startswith("- two\n  detail two\n")
-    assert chunks[2] == "- three\n"
+    assert chunks[0] == "  - one\n    detail one\n"
+    assert chunks[1] == "  - two\n    detail two\n"
+    assert chunks[2] == "  - three\n"
 
 
-def test_steps_skips_a_more_indented_nested_item_before_the_next_dedent() -> None:
-    text = "- one\n  - nested\n- two\n"
+def test_steps_keeps_a_more_indented_nested_item_inside_its_own_step(tmp_path) -> None:
+    """A step's own nested `- ` (a `with:` list, say) is not a step of its own."""
+    text = "steps:\n  - one\n    - nested\n  - two\n"
 
     chunks = audit._steps(text)
 
-    assert chunks[0] == "- one\n  - nested\n"
-    assert chunks[1] == "  - nested\n"
-    assert chunks[2] == "- two\n"
+    assert chunks == ["  - one\n    - nested\n", "  - two\n"]
+
+
+def test_steps_stops_at_the_next_job_and_ignores_shallower_dashes_elsewhere() -> None:
+    """A matrix entry or a later job's own `steps:` never fragments or extends this one."""
+    text = (
+        "jobs:\n"
+        "  build:\n"
+        "    strategy:\n"
+        "      matrix:\n"
+        "        os: [ubuntu-latest, windows-latest]\n"
+        "    steps:\n"
+        "      - run: echo hi\n"
+        "  other:\n"
+        "    steps:\n"
+        "      - run: echo bye\n"
+    )
+
+    chunks = audit._steps(text)
+
+    assert chunks == ["      - run: echo hi\n", "      - run: echo bye\n"]
+
+
+def test_steps_returns_nothing_for_text_with_no_steps_key() -> None:
+    assert audit._steps("- one\n  detail one\n- two\n") == []
+
+
+def test_run_value_returns_none_for_a_step_with_no_run_key() -> None:
+    assert audit._run_value("- uses: actions/checkout@v4\n") is None
+
+
+def test_run_value_stops_at_a_sibling_key_after_an_inline_run(tmp_path) -> None:
+    step = "      - run: echo hi\n        shell: bash\n"
+    assert audit._run_value(step) == "echo hi\n"
+
+
+def test_run_value_keeps_a_block_scalar_body_and_stops_at_the_next_step() -> None:
+    step = "  - run: |\n      echo one\n      echo two\n  - run: echo three\n"
+    assert audit._run_value(step) == "\n      echo one\n      echo two\n"
 
 
 def test_jobs_returns_an_empty_mapping_when_there_is_no_jobs_key() -> None:
@@ -978,6 +1015,30 @@ def test_repo_under_250kb_fails_when_git_tracked_bytes_outside_tests_are_too_lar
     assert audit.repo_under_250kb(tmp_path, facts()) is not None
 
 
+def test_repo_under_250kb_does_not_double_count_a_manifest_named_template(tmp_path) -> None:
+    """A template mirrors a live file byte for byte; counting both would double it."""
+    init_git_repo(tmp_path)
+    payload = "x" * 130_000
+    write(tmp_path, "live.txt", payload)
+    write(tmp_path, "templates/live.txt", payload)
+    write(tmp_path, "templates/manifest.json", json.dumps([{"src": "live.txt"}]))
+    subprocess.run(
+        ["git", "add", "live.txt", "templates/live.txt", "templates/manifest.json"],
+        cwd=tmp_path,
+        check=True,
+    )
+    assert audit.repo_under_250kb(tmp_path, facts()) is None
+
+
+def test_repo_under_250kb_counts_a_template_twice_with_no_manifest(tmp_path) -> None:
+    init_git_repo(tmp_path)
+    payload = "x" * 130_000
+    write(tmp_path, "live.txt", payload)
+    write(tmp_path, "templates/live.txt", payload)
+    subprocess.run(["git", "add", "live.txt", "templates/live.txt"], cwd=tmp_path, check=True)
+    assert audit.repo_under_250kb(tmp_path, facts()) is not None
+
+
 def test_leanness_tool_never_wired_into_ci_passes_without_ponytail(tmp_path) -> None:
     workflow(tmp_path, "name: ci\njobs:\n  test:\n    runs-on: ubuntu-latest\n")
     assert audit.leanness_tool_never_wired_into_ci(tmp_path, facts()) is None
@@ -1100,6 +1161,82 @@ def test_actions_pinned_to_full_sha_with_version_comment_fails_for_an_ignore_wit
     assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is not None
 
 
+def test_actions_pinned_to_full_sha_with_version_comment_skips_a_local_path_reference(
+    tmp_path,
+) -> None:
+    """A local path cannot carry a commit-SHA pin, so it is exempt, not a gap."""
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - uses: ./.github/workflows/update-docs.yml\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_skips_a_docker_reference(
+    tmp_path,
+) -> None:
+    workflow(tmp_path, "jobs:\n  build:\n    steps:\n      - uses: docker://alpine:3.18\n")
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_still_fails_with_no_pin_at_all(
+    tmp_path,
+) -> None:
+    """Exempting local paths and docker refs must not exempt a bare third-party reference."""
+    workflow(tmp_path, "jobs:\n  build:\n    steps:\n      - uses: actions/checkout\n")
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is not None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_passes_for_a_quoted_ratchet_pin(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: 'docker/setup-qemu-action@"
+        "96fe6ef7f33517b61c61be40b68a1882f3264fb8' # ratchet:docker/setup-qemu-action@v4\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_fails_for_a_quoted_pin_with_no_comment(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n"
+        '      - uses: "docker/setup-qemu-action@'
+        '96fe6ef7f33517b61c61be40b68a1882f3264fb8"\n',
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is not None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_ignores_a_key_ending_in_uses(
+    tmp_path,
+) -> None:
+    """`statuses: write` must never be mistaken for a `uses:` key."""
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    permissions:\n      statuses: write\n    steps:\n"
+        "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_ignores_uses_inside_prose(
+    tmp_path,
+) -> None:
+    """`uses:` written inside a body/run block scalar is text, not a YAML key."""
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+        "      - run: |\n"
+        "          echo 'Update `uses: astral-sh/setup-uv@...` in the docs.'\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
 def test_no_expression_interpolation_in_run_steps_passes_when_env_carries_the_value(
     tmp_path,
 ) -> None:
@@ -1123,6 +1260,44 @@ def test_no_expression_interpolation_in_run_steps_passes_for_a_step_with_no_run_
 ) -> None:
     workflow(tmp_path, "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n")
     assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts()) is None
+
+
+def test_no_expression_interpolation_in_run_steps_ignores_a_shallow_dash_before_the_jobs(
+    tmp_path,
+) -> None:
+    """A schedule cron or a matrix list, shallower than `steps:`, must never widen a step.
+
+    A later step's own `${{ }}` in `with:`, not `run:`, must not be swept
+    into an earlier step's run block either.
+    """
+    workflow(
+        tmp_path,
+        "on:\n  schedule:\n    - cron: '0 0 * * *'\n"
+        "jobs:\n"
+        "  build:\n"
+        "    strategy:\n"
+        "      matrix:\n"
+        "        os: [ubuntu-latest, windows-latest]\n"
+        "    steps:\n"
+        "      - run: echo hi\n"
+        "      - name: use a secret\n"
+        "        if: ${{ failure() }}\n"
+        "        with:\n"
+        "          token: ${{ secrets.TOKEN }}\n",
+    )
+    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts()) is None
+
+
+def test_no_expression_interpolation_in_run_steps_still_fails_inside_a_real_run_block(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  schedule:\n    - cron: '0 0 * * *'\n"
+        "jobs:\n  build:\n    steps:\n"
+        '      - run: echo "${{ github.sha }}"\n',
+    )
+    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts()) is not None
 
 
 def test_secrets_scan_configured_over_full_history_fails_when_no_workflow_runs_it(
@@ -1197,15 +1372,59 @@ def test_dependabot_grouped_weekly_with_cooldown_fails_without_groups(tmp_path) 
     assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is not None
 
 
-def test_dependabot_grouped_weekly_with_cooldown_fails_for_an_ecosystem_outside_the_allowed_set(
+def test_dependabot_grouped_weekly_with_cooldown_passes_for_any_well_configured_ecosystem(
     tmp_path,
 ) -> None:
+    """Not only github-actions and pip: any ecosystem that is grouped weekly with a cooldown."""
     write(
         tmp_path,
         ".github/dependabot.yml",
         DEPENDABOT_GOOD.replace('package-ecosystem: "pip"', 'package-ecosystem: "npm"'),
     )
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_fails_for_a_cooldown_under_seven_days(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        ".github/dependabot.yml",
+        DEPENDABOT_GOOD.replace("default-days: 7", "default-days: 3"),
+    )
     assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is not None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_reads_the_yaml_spelling_too(tmp_path) -> None:
+    write(tmp_path, ".github/dependabot.yaml", DEPENDABOT_GOOD)
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_fails_when_no_updates_are_configured(
+    tmp_path,
+) -> None:
+    write(tmp_path, ".github/dependabot.yml", "version: 2\nupdates:\n")
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is not None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_prefers_yml_when_both_exist(tmp_path) -> None:
+    write(tmp_path, ".github/dependabot.yml", DEPENDABOT_GOOD)
+    write(tmp_path, ".github/dependabot.yaml", DEPENDABOT_GOOD.replace('"weekly"', '"daily"'))
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_reads_entries_flush_with_updates(
+    tmp_path,
+) -> None:
+    """YAML allows `- ` at the same indent as its own key, not only more indented."""
+    write(
+        tmp_path,
+        ".github/dependabot.yml",
+        "version: 2\nupdates:\n"
+        '- package-ecosystem: "npm"\n  schedule:\n    interval: "weekly"\n'
+        '  cooldown:\n    default-days: 7\n  groups:\n    npm:\n      patterns: ["*"]\n',
+    )
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is None
 
 
 RUFF_GOOD = (
@@ -1383,7 +1602,9 @@ def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_fails_when_pull_request_
 
 
 CI_GATE_GOOD = (
-    "jobs:\n  ci:\n    needs: [test]\n    if: always()\n    permissions: {}\n"
+    "on:\n  pull_request:\njobs:\n"
+    "  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+    "  ci:\n    needs: [test]\n    if: always()\n"
     '    steps:\n      - run: |\n          if [ "${R}" != "success" ]; then exit 1; fi\n'
 )
 
@@ -1393,8 +1614,18 @@ def test_ci_gate_job_fails_closed_passes_for_the_standard_gate_job(tmp_path) -> 
     assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is None
 
 
+def test_ci_gate_job_fails_closed_passes_when_the_workflow_has_a_single_job(tmp_path) -> None:
+    """A workflow with exactly one job is itself the one required context; no gate needed."""
+    workflow(tmp_path, "on:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n")
+    assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is None
+
+
 def test_ci_gate_job_fails_closed_fails_when_there_is_no_always_gate_job(tmp_path) -> None:
-    workflow(tmp_path, "jobs:\n  test:\n    runs-on: ubuntu-latest\n")
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+        "  build:\n    runs-on: ubuntu-latest\n",
+    )
     assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is not None
 
 
@@ -1403,10 +1634,71 @@ def test_ci_gate_job_fails_closed_fails_when_the_gate_job_never_checks_the_resul
 ) -> None:
     workflow(
         tmp_path,
-        "jobs:\n  ci:\n    needs: [test]\n    if: always()\n    permissions: {}\n"
+        "on:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+        "  ci:\n    needs: [test]\n    if: always()\n"
         "    steps:\n      - run: echo done\n",
     )
     assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is not None
+
+
+def test_ci_gate_job_fails_closed_passes_for_the_alls_green_gate_job(tmp_path) -> None:
+    """Job name does not matter, and neither does the shape of the if: guard."""
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\njobs:\n"
+        "  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo lint\n"
+        "  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo test\n"
+        "  all-tests-pass:\n    needs: [lint, test]\n"
+        "    if: ${{ !cancelled() }}\n    steps:\n"
+        "      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0\n"
+        "        with:\n          jobs: ${{ toJSON(needs) }}\n",
+    )
+    assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is None
+
+
+def test_ci_gate_job_fails_closed_fails_when_the_gate_job_skips_a_dependency(tmp_path) -> None:
+    """Delegating to alls-green is not enough if the gate job does not need every job."""
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\njobs:\n"
+        "  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo lint\n"
+        "  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo test\n"
+        "  all-tests-pass:\n    needs: [lint]\n    if: always()\n    steps:\n"
+        "      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0\n",
+    )
+    assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is not None
+
+
+def test_needs_parses_a_block_style_list() -> None:
+    body = "    needs:\n      - lint\n      - test\n    if: always()\n"
+    assert audit._needs(body) == {"lint", "test"}
+
+
+def test_needs_returns_an_empty_set_with_no_needs_key() -> None:
+    assert audit._needs("    if: always()\n") == set()
+
+
+def test_ci_gate_job_fails_closed_passes_with_a_block_style_needs_list(tmp_path) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\njobs:\n"
+        "  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo lint\n"
+        "  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo test\n"
+        "  ci:\n    needs:\n      - lint\n      - test\n    if: always()\n"
+        "    steps:\n      - uses: re-actors/alls-green@abcdef\n",
+    )
+    assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is None
+
+
+def test_ci_gate_job_fails_closed_ignores_a_workflow_with_no_pull_request_trigger(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  schedule:\n    - cron: '0 0 * * *'\njobs:\n"
+        "  a:\n    runs-on: ubuntu-latest\n  b:\n    runs-on: ubuntu-latest\n",
+    )
+    assert audit.ci_gate_job_fails_closed(tmp_path, facts()) is None
 
 
 def test_dependency_audit_workflow_separate_and_scheduled_passes_for_a_scheduled_pip_audit(
@@ -1584,6 +1876,33 @@ def test_no_lockfile_committed_fails_when_a_lockfile_is_tracked_by_git(tmp_path)
     subprocess.run(["git", "commit", "-q", "-m", "Add uv.lock"], cwd=tmp_path, check=True)
 
     assert audit.no_lockfile_committed(tmp_path, facts()) is not None
+
+
+def test_no_001_does_not_fire_on_a_javascript_repo_with_a_committed_package_lock(
+    tmp_path,
+) -> None:
+    """NO-001's basis is uv resolving a Python dev group; it must not bind a JS action."""
+    init_git_repo(tmp_path)
+    write(tmp_path, "action.yml", "runs:\n  using: node20\n  main: dist/index.js\n")
+    write(tmp_path, "package-lock.json", "{}\n")
+    subprocess.run(["git", "add", "action.yml", "package-lock.json"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "Add the action"], cwd=tmp_path, check=True)
+
+    rows = audit.gaps(tmp_path)
+
+    assert "NO-001" not in {row["id"] for row in rows}
+
+
+def test_no_001_still_fires_on_a_python_repo_with_a_committed_lockfile(tmp_path) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, "pyproject.toml", "[project]\nname = 'x'\nversion = '0'\n")
+    write(tmp_path, "uv.lock", "# tracked\n")
+    subprocess.run(["git", "add", "pyproject.toml", "uv.lock"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "Add uv.lock"], cwd=tmp_path, check=True)
+
+    rows = audit.gaps(tmp_path)
+
+    assert "NO-001" in {row["id"] for row in rows}
 
 
 def test_tracked_files_returns_none_outside_a_git_repo(tmp_path) -> None:
@@ -2217,6 +2536,67 @@ def test_audit_of_a_non_python_repo_has_no_pyproject_rows(tmp_path) -> None:
     rows = audit.gaps(tmp_path)
 
     assert {row["id"] for row in rows}.isdisjoint({"STR-001", "STR-002", "TST-001", "TST-002"})
+
+
+def test_gather_facts_sets_language_to_other_when_py_files_are_a_typescript_actions_helpers(
+    tmp_path,
+) -> None:
+    """A TypeScript action with a handful of helper `.py` scripts is not a Python repo."""
+    init_git_repo(tmp_path)
+    write(tmp_path, "src/main.ts", "export {}\n")
+    write(tmp_path, "src/other.ts", "export {}\n")
+    write(tmp_path, "src/setup.ts", "export {}\n")
+    write(tmp_path, "__tests__/helpers/one.py", "print('one')\n")
+    write(tmp_path, "__tests__/helpers/two.py", "print('two')\n")
+    subprocess.run(
+        [
+            "git",
+            "add",
+            "src/main.ts",
+            "src/other.ts",
+            "src/setup.ts",
+            "__tests__/helpers/one.py",
+            "__tests__/helpers/two.py",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "other"
+
+
+def test_gather_facts_sets_language_to_python_when_py_is_the_majority_extension(
+    tmp_path,
+) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, "src/a.py", "print('a')\n")
+    write(tmp_path, "src/b.py", "print('b')\n")
+    write(tmp_path, "src/c.sh", "echo c\n")
+    subprocess.run(["git", "add", "src/a.py", "src/b.py", "src/c.sh"], cwd=tmp_path, check=True)
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "python"
+
+
+def test_gather_facts_sets_language_to_python_from_a_top_level_requirements_file(
+    tmp_path,
+) -> None:
+    write(tmp_path, "requirements-dev.txt", "pytest\n")
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "python"
+
+
+def test_gather_facts_sets_language_to_python_from_setup_py(tmp_path) -> None:
+    write(tmp_path, "setup.py", "from setuptools import setup\nsetup()\n")
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "python"
 
 
 def test_audit_of_a_python_repo_without_pyproject_still_flags_str_001(tmp_path) -> None:

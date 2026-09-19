@@ -1,14 +1,6 @@
 """The `ossemble audit` subcommand: scores a repo against `rules/rules.json`.
 
-Each machine-checkable rule names a probe function in this module. A probe
-reads facts from the target repo (and, with `--api`, from `gh api`) and
-returns `None` when the rule holds, or an `(file, message)` pair when it
-does not. `run` reads the rules, works out the repo's stage, filters rules
-by their `when` conditions, calls each probe, and prints the gap table.
-
-The audit does not redo what a selected hook already checks (pins,
-permissions, workflow syntax, secrets): for those it only confirms the
-hook is configured and at its stage's value.
+A probe returns `None` when its rule holds, else an `(file, message)` gap.
 """
 
 from __future__ import annotations
@@ -86,20 +78,12 @@ class _RuleError(RuntimeError):
 
 
 def rules_path() -> Path:
-    """The path to ossemble's own rules/rules.json, kept beside this package.
-
-    The rules describe how ossemble judges a repo; they are never read from
-    the repo being audited.
-    """
+    """The path to ossemble's own rules/rules.json, never the audited repo's."""
     return Path(__file__).resolve().parents[2] / "rules" / "rules.json"
 
 
 def _load_rules() -> list[dict]:
-    """Load and parse ossemble's own rules.json.
-
-    Raises FileNotFoundError when it is missing, or OSError/JSONDecodeError
-    when it cannot be read or parsed.
-    """
+    """Load and parse ossemble's own rules.json."""
     path = rules_path()
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -113,14 +97,7 @@ _RULE_REQUIRED_TEXT_FIELDS = ("id", "text", "basis", "category")
 
 
 def _validate_rules(rules: list[dict]) -> None:
-    """Confirm every rule has its required fields, correctly typed, before any is scored.
-
-    Per the contract: id, text, basis and category are non-empty strings;
-    kind is `default` or `recommendation`; stage is `build` or `finish`;
-    check is `audit`, `api` or `judgment`; and a rule whose check is
-    `audit` or `api` names a probe. Raises `_RuleError` naming the rule,
-    by id when it has one, else by its position in the list.
-    """
+    """Confirm every rule's fields, correctly typed, before any is scored."""
     for index, rule in enumerate(rules):
         rule_id = rule.get("id")
         label = rule_id if isinstance(rule_id, str) and rule_id else f"#{index}"
@@ -143,11 +120,7 @@ def _validate_rules(rules: list[dict]) -> None:
 def _score(
     root: Path, facts: dict, rules: list[dict], *, use_api: bool
 ) -> tuple[list[dict], list[dict]]:
-    """Evaluate `rules` against `root`/`facts`, returning (gaps, recommendations).
-
-    Raises `_RuleError` when a rule fails validation or names a probe this
-    module does not define.
-    """
+    """Evaluate `rules` against `root`/`facts`, returning (gaps, recommendations)."""
     _validate_rules(rules)
     gaps: list[dict[str, str]] = []
     recommendations: list[dict[str, str]] = []
@@ -190,12 +163,7 @@ def _score(
 
 
 def gaps(root: Path, *, use_api: bool = False) -> list[dict]:
-    """Score `root` against ossemble's own rules.json and return the sorted gap rows.
-
-    These are the same default-rule rows `run` prints in the gap table and
-    with `--json`. Used by `resume` to compute regressions against a
-    recorded baseline.
-    """
+    """Score `root` against ossemble's own rules.json and return the sorted gap rows."""
     root = Path(root).resolve()
     rules = _load_rules()
     facts = _gather_facts(root, use_api=use_api)
@@ -284,26 +252,46 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
     return facts
 
 
-def _detect_language(root: Path, tracked_files: set[str] | None) -> str:
-    """`python` when the repo has a pyproject.toml or a tracked `.py` file of its own.
+_PYTHON_MARKER_NAMES = ("pyproject.toml", "setup.py", "setup.cfg")
 
-    A rule whose probe reads pyproject.toml applies only to a Python repo,
-    so a repo that is neither gets none of those rows. A `.py` file under
-    tests/ or under a dot-prefixed top-level directory (a plugin shim, a
-    tool's own config) does not by itself make the repo a Python project.
-    `tracked_files` is None when `root` is not a git repository, in which
-    case only the pyproject.toml check can decide.
-    """
-    if (root / "pyproject.toml").is_file():
+_OTHER_SOURCE_EXTENSIONS = (
+    ".ts",
+    ".js",
+    ".go",
+    ".rs",
+    ".rb",
+    ".sh",
+    ".java",
+    ".kt",
+    ".swift",
+    ".c",
+    ".cpp",
+    ".cs",
+)
+
+
+def _detect_language(root: Path, tracked_files: set[str] | None) -> str:
+    """`python` for a marker file, else the majority tracked source extension."""
+    if any((root / name).is_file() for name in _PYTHON_MARKER_NAMES):
         return "python"
-    if tracked_files is not None:
-        for relative in tracked_files:
-            if not relative.endswith(".py"):
-                continue
-            top = relative.split("/", 1)[0]
-            if top == "tests" or top.startswith("."):
-                continue
-            return "python"
+    if any(root.glob("requirements*.txt")):
+        return "python"
+    if tracked_files is None:
+        return "other"
+    counts: dict[str, int] = {}
+    for relative in tracked_files:
+        top = relative.split("/", 1)[0]
+        if top == "tests" or top.startswith("."):
+            continue
+        suffix = Path(relative).suffix
+        if suffix == ".py" or suffix in _OTHER_SOURCE_EXTENSIONS:
+            counts[suffix] = counts.get(suffix, 0) + 1
+    python_count = counts.get(".py", 0)
+    if python_count == 0:
+        return "other"
+    other_counts = [count for suffix, count in counts.items() if suffix != ".py"]
+    if python_count > max(other_counts, default=0):
+        return "python"
     return "other"
 
 
@@ -334,13 +322,7 @@ def _workflow_item_list(root: Path) -> list[tuple[Path, str]]:
 
 
 def _cached(facts: dict, key: str, compute: Callable[[], _CacheT]) -> _CacheT:
-    """Return `facts[key]` when `_gather_facts` already put it there, else compute it now.
-
-    Lets a probe run standalone, against a hand-built `facts` dict that
-    has no such key, exactly as it did before `_gather_facts` started
-    caching; `run` and `gaps` pay the read or parse behind `compute` only
-    once per audit, since their `facts` already carries the key.
-    """
+    """Return `facts[key]` when `_gather_facts` already put it there, else compute it now."""
     if key in facts:
         return facts[key]
     return compute()
@@ -393,19 +375,42 @@ def _read_text(path: Path) -> str | None:
 _run_git = _git.run_git
 
 
-def _steps(text: str) -> list[str]:
-    """Split a workflow's raw text into one chunk per `- ` list item."""
-    matches = list(STEP_START.finditer(text))
-    chunks = []
-    for index, match in enumerate(matches):
-        indent = len(match.group(1))
-        end = len(text)
-        for later in matches[index + 1 :]:
-            if len(later.group(1)) <= indent:
-                end = later.start()
-                break
-        chunks.append(text[match.start() : end])
+def _until_dedent(text: str, indent: int, *, skip_list_items: bool = False) -> str:
+    hold = r"(?!-([ \t]|$))" if skip_list_items else ""
+    boundary = re.search(rf"^[ \t]{{0,{indent}}}{hold}\S", text, re.MULTILINE)
+    return text[: boundary.start()] if boundary else text
+
+
+def _list_items_under(text: str, key: str) -> list[str]:
+    key_pattern = re.compile(rf"^([ \t]*){re.escape(key)}:[ \t]*$", re.MULTILINE)
+    chunks: list[str] = []
+    for key_match in key_pattern.finditer(text):
+        key_indent = len(key_match.group(1))
+        block = _until_dedent(text[key_match.end() :], key_indent, skip_list_items=True)
+        item_matches = list(STEP_START.finditer(block))
+        if not item_matches:
+            continue
+        item_indent = len(item_matches[0].group(1))
+        item_matches = [match for match in item_matches if len(match.group(1)) == item_indent]
+        for index, match in enumerate(item_matches):
+            end = item_matches[index + 1].start() if index + 1 < len(item_matches) else len(block)
+            chunks.append(block[match.start() : end])
     return chunks
+
+
+def _steps(text: str) -> list[str]:
+    return _list_items_under(text, "steps")
+
+
+def _run_value(step: str) -> str | None:
+    run_match = re.search(
+        r"^([ \t]*(?:-[ \t]+)?)run:[ \t]*(\|[+-]?|>[+-]?)?[ \t]*(.*)$", step, re.MULTILINE
+    )
+    if not run_match:
+        return None
+    run_indent = len(run_match.group(1))
+    block = _until_dedent(step[run_match.end() :], run_indent)
+    return run_match.group(3) + block
 
 
 _ON_LINE = re.compile(r"^on:[ \t]*(.*)$", re.MULTILINE)
@@ -521,11 +526,24 @@ def repo_under_250kb(root: Path, facts: dict) -> ProbeResult:
     return None
 
 
+def _template_mirror_paths(root: Path) -> set[str]:
+    """Every `templates/<src>` the manifest names; each mirrors a live file already counted."""
+    manifest = _load_json(root / "templates" / "manifest.json")
+    if not isinstance(manifest, list):
+        return set()
+    return {
+        f"templates/{entry['src']}"
+        for entry in manifest
+        if isinstance(entry, dict) and isinstance(entry.get("src"), str)
+    }
+
+
 def _tracked_bytes(root: Path, tracked: set[str]) -> int:
-    """Sum the size of every git-tracked file outside tests/ and examples/."""
+    """Sum the size of every git-tracked file outside tests/, examples/ and template mirrors."""
+    skip = _template_mirror_paths(root)
     total = 0
     for relative in tracked:
-        if relative.split("/", 1)[0] in _LEANNESS_EXCLUDED_DIRS:
+        if relative.split("/", 1)[0] in _LEANNESS_EXCLUDED_DIRS or relative in skip:
             continue
         path = root / relative
         if path.is_file() and not path.is_symlink():
@@ -534,7 +552,7 @@ def _tracked_bytes(root: Path, tracked: set[str]) -> int:
 
 
 def _walked_bytes(root: Path) -> int:
-    """Sum file sizes by walking the tree, for a target with no git history to read."""
+    """Sum file sizes by walking the tree, when there is no git history."""
     total = 0
     for path in root.rglob("*"):
         parts = path.relative_to(root).parts
@@ -597,20 +615,20 @@ def checkout_persist_credentials_false(root: Path, facts: dict) -> ProbeResult:
 ZIZMOR_UNPINNED_IGNORE = re.compile(r"zizmor:\s*ignore\[unpinned-uses\]\s*(\S.*)?")
 
 
-def actions_pinned_to_full_sha_with_version_comment(root: Path, facts: dict) -> ProbeResult:
-    """Confirm every `uses:` is pinned to a full commit SHA with a version comment.
+def _is_unpinnable_reference(value: str) -> bool:
+    value = value.strip("'\"")
+    return value.startswith("docker://") or (not value[:1].isalnum() and value[1:2] == "/")
 
-    A deliberate unpinned self-reference passes when the same line carries
-    `zizmor: ignore[unpinned-uses]` followed by at least one word of
-    reason; an ignore with no reason still fails.
-    """
-    pin_pattern = re.compile(r"uses:\s*([^\s#]+)@([0-9a-fA-F]{40})(\s*#\s*(\S.*))?")
+
+def actions_pinned_to_full_sha_with_version_comment(root: Path, facts: dict) -> ProbeResult:
+    """Confirm every `uses:` is pinned to a full commit SHA with a version comment."""
+    pin_pattern = re.compile(r"uses:\s*[\"']?([^\s#'\"]+)@([0-9a-fA-F]{40})[\"']?(\s*#\s*(\S.*))?")
     for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for line in text.splitlines():
             if line.strip().startswith("#"):
                 continue
-            uses_match = re.search(r"uses:\s*(\S+)", line)
-            if not uses_match or uses_match.group(1).startswith("./"):
+            uses_match = re.match(r"[ \t]*(?:-[ \t]*)?uses:\s*(\S+)", line)
+            if not uses_match or _is_unpinnable_reference(uses_match.group(1)):
                 continue
             pinned = pin_pattern.search(line)
             if pinned and pinned.group(4):
@@ -629,11 +647,10 @@ def no_expression_interpolation_in_run_steps(root: Path, facts: dict) -> ProbeRe
     """Never put `${{ }}` inside a `run:` step; pass the value through `env:` instead."""
     for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for step in _steps(text):
-            run_match = re.search(r"run:\s*(\||>)?\s*(.*)", step)
-            if not run_match:
+            run_value = _run_value(step)
+            if run_value is None:
                 continue
-            run_index = step.index("run:")
-            if "${{" in step[run_index:]:
+            if "${{" in run_value:
                 return (
                     str(path.relative_to(root)),
                     "a run: step interpolates ${{ }} directly instead of using env:",
@@ -655,23 +672,27 @@ def secrets_scan_configured_over_full_history(root: Path, facts: dict) -> ProbeR
     )
 
 
+_DEPENDABOT_NAMES = (".github/dependabot.yml", ".github/dependabot.yaml")
+_COOLDOWN_DAYS = re.compile(r"cooldown:.*?default-days:\s*(\d+)", re.DOTALL)
+_MIN_COOLDOWN_DAYS = 7
+
+
 def dependabot_grouped_weekly_with_cooldown(root: Path, _facts: dict) -> ProbeResult:
-    """Confirm Dependabot updates are grouped weekly with a cooldown."""
-    text = _read_text(root / ".github" / "dependabot.yml")
-    if text is None:
-        return (".github/dependabot.yml", "file is missing")
-    if not re.search(r"interval:\s*[\"']?weekly[\"']?", text):
-        return (".github/dependabot.yml", "no weekly schedule interval")
-    if "cooldown:" not in text:
-        return (".github/dependabot.yml", "no cooldown configured")
-    if "groups:" not in text:
-        return (".github/dependabot.yml", "updates are not grouped")
-    ecosystems = set(re.findall(r"package-ecosystem:\s*[\"']?([\w-]+)[\"']?", text))
-    if not ecosystems or not ecosystems.issubset({"github-actions", "pip"}):
-        return (
-            ".github/dependabot.yml",
-            f"ecosystems {sorted(ecosystems)} are not limited to github-actions and pip",
-        )
+    """Confirm every configured Dependabot ecosystem is grouped weekly with a cooldown."""
+    name = next((n for n in _DEPENDABOT_NAMES if (root / n).is_file()), None)
+    if name is None:
+        return (_DEPENDABOT_NAMES[0], "file is missing")
+    entries = _list_items_under(_read_text(root / name) or "", "updates")
+    if not entries:
+        return (name, "no package-ecosystem update is configured")
+    for entry in entries:
+        if not re.search(r"interval:\s*[\"']?weekly[\"']?", entry):
+            return (name, "an ecosystem has no weekly schedule interval")
+        cooldown = _COOLDOWN_DAYS.search(entry)
+        if not cooldown or int(cooldown.group(1)) < _MIN_COOLDOWN_DAYS:
+            return (name, "an ecosystem has no seven-day cooldown")
+        if "groups:" not in entry:
+            return (name, "an ecosystem's updates are not grouped")
     return None
 
 
@@ -707,13 +728,7 @@ def ruff_select_all_with_ignores_justified(root: Path, facts: dict) -> ProbeResu
 
 
 def concurrency_keyed_by_ref_on_pr_and_sha_on_push(root: Path, facts: dict) -> ProbeResult:
-    """Confirm concurrency is keyed by ref on pull requests and sha on pushes.
-
-    Only the triggers a workflow actually declares bind: a workflow with no
-    pull_request and no push trigger, such as one run only by schedule,
-    workflow_dispatch or workflow_call, has no such run to key and is
-    exempt.
-    """
+    """Confirm concurrency is keyed by ref on pull requests and sha on pushes."""
     for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         triggers = _on_triggers(text)
         needs_ref = "pull_request" in triggers
@@ -736,24 +751,53 @@ def concurrency_keyed_by_ref_on_pr_and_sha_on_push(root: Path, facts: dict) -> P
     return None
 
 
+_GATE_ALWAYS_MARKERS = ("if: always()", "if: ${{ !cancelled() }}")
+_ALLS_GREEN_USES = re.compile(r"uses:\s*[\"']?re-actors/alls-green")
+_NEEDS_RESULT = re.compile(r"needs\.\S+\.result")
+_NEEDS_INLINE = re.compile(r"needs:\s*\[([^\]]*)\]")
+
+
+def _needs(body: str) -> set[str]:
+    inline = _NEEDS_INLINE.search(body)
+    if inline:
+        return {item.strip().strip("'\"") for item in inline.group(1).split(",") if item.strip()}
+    return {
+        re.sub(r"^[ \t]*-[ \t]*", "", chunk).strip().strip("'\"")
+        for chunk in _list_items_under(body, "needs")
+    }
+
+
+_MIN_JOBS_NEEDING_A_GATE = 2
+
+
 def ci_gate_job_fails_closed(root: Path, facts: dict) -> ProbeResult:
-    """Confirm the required `ci` job has empty permissions, runs always, and fails closed."""
+    """Confirm a multi-job pull-request workflow has a gate that fails closed."""
     for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
-        gate_jobs = [
-            body
-            for body in _jobs(text).values()
-            if "if: always()" in body and re.search(r"permissions:\s*\{\}", body)
-        ]
-        if not gate_jobs:
+        if "pull_request" not in _on_triggers(text):
             continue
-        for body in gate_jobs:
-            if '!= "success"' not in body and "!= 'success'" not in body:
-                return (
-                    str(path.relative_to(root)),
-                    "the always() gate job does not fail on a non-success result",
-                )
-        return None
-    return (".github/workflows", "no gate job with permissions: {} and if: always() was found")
+        jobs = _jobs(text)
+        if len(jobs) < _MIN_JOBS_NEEDING_A_GATE:
+            continue
+        job_names = set(jobs)
+        candidates = [
+            (name, body)
+            for name, body in jobs.items()
+            if any(marker in body for marker in _GATE_ALWAYS_MARKERS)
+        ]
+        if not candidates:
+            return (str(path.relative_to(root)), "no job runs regardless of its dependencies")
+        for name, body in candidates:
+            if job_names - {name} - _needs(body):
+                continue
+            if (
+                _ALLS_GREEN_USES.search(body)
+                or _NEEDS_RESULT.search(body)
+                or '!= "success"' in body
+                or "!= 'success'" in body
+            ):
+                return None
+        return (str(path.relative_to(root)), "no job depends on every job and fails closed")
+    return None
 
 
 def dependency_audit_workflow_separate_and_scheduled(root: Path, facts: dict) -> ProbeResult:
@@ -767,7 +811,7 @@ def dependency_audit_workflow_separate_and_scheduled(root: Path, facts: dict) ->
 
 
 def diff_cover_runs_on_one_ci_leg(root: Path, facts: dict) -> ProbeResult:
-    """Confirm diff-cover runs on one CI leg once the repo reaches the finish stage."""
+    """Confirm diff-cover runs on one CI leg at the finish stage."""
     for _path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         if "diff-cover" in text:
             return None
@@ -816,7 +860,7 @@ def readme_headings_are_only_the_fixed_set(root: Path, _facts: dict) -> ProbeRes
 
 
 def readme_security_section_is_never_only(root: Path, _facts: dict) -> ProbeResult:
-    """Write the README's Security section as a never-only checklist, with no checked items."""
+    """Write the README's Security section as a never-only checklist."""
     text = _read_text(root / "README.md")
     if text is None:
         return ("README.md", "file is missing")
@@ -853,13 +897,7 @@ def _tracked_files(root: Path) -> set[str] | None:
 
 
 def _python_source_files(root: Path, facts: dict) -> list[Path]:
-    """The repo's own `.py` files, never a dependency or a virtual environment.
-
-    Prefers git-tracked paths, since that is the sure way to tell a
-    dependency installed into `.venv/` from the repo's own source; a
-    directory walk is the fallback for a target with no git history to
-    read, still skipping the directories nothing here ever wants scanned.
-    """
+    """The repo's own `.py` files, never a dependency or a virtual environment."""
     tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
     if tracked is not None:
         return [root / relative for relative in sorted(tracked) if relative.endswith(".py")]
@@ -872,11 +910,7 @@ def _python_source_files(root: Path, facts: dict) -> list[Path]:
 
 
 def zero_tokens_beyond_builtin_github_token(root: Path, facts: dict) -> ProbeResult:
-    """Confirm no workflow references a secret beyond the built-in GITHUB_TOKEN.
-
-    A secret name the owner recorded under `optins` in `.ossemble/state.json`
-    (a list of names, or an object keyed by name) is not a gap.
-    """
+    """Confirm no workflow references a secret beyond the built-in GITHUB_TOKEN."""
     state = _load_json(root / ".ossemble" / "state.json")
     optins = state.get("optins") if isinstance(state, dict) else None
     allowed = set(optins) if isinstance(optins, (list, dict)) else set()
@@ -943,7 +977,7 @@ def coverage_floor_at_least_seventy(root: Path, facts: dict) -> ProbeResult:
 
 
 def coverage_floor_is_100_line_and_branch(root: Path, facts: dict) -> ProbeResult:
-    """Enforce 100 percent line and branch coverage once the repo reaches the finish stage."""
+    """Enforce 100 percent line and branch coverage at the finish stage."""
     config = _cached(facts, "pyproject", lambda: _load_toml(root / "pyproject.toml"))
     if config is None:
         return ("pyproject.toml", "cannot read pyproject.toml")
@@ -1115,7 +1149,7 @@ def ruleset_requires_ci_check(_root: Path, facts: dict) -> ProbeResult:
 
 
 def ruleset_blocks_history_rewrites(_root: Path, facts: dict) -> ProbeResult:
-    """Confirm the branch ruleset blocks deletion, force push and non-linear history."""
+    """Confirm the ruleset blocks deletion, force push and non-linear history."""
     ruleset = facts.get("ruleset")
     if ruleset is None:
         return ("gh api rulesets", "no ruleset named main was found")
