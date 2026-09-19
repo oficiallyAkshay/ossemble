@@ -10,4 +10,4 @@ Commit: one commit, a plain present-tense sentence stating the resulting state a
 
 If a shared file moved under you before you pushed, rebase: `git fetch origin main && git rebase origin/main`, then `git push --force-with-lease`.
 
-Report, at most 300 words: the pull request link, files changed, counts before and after (tests, coverage, words if you touched docs), the verification commands you ran with each one's last line, and anything you did not finish and why. No prose beyond that; the orchestrator reads this without parsing.
+Report in the builder shape from `references/contract.md` section 7; no prose beyond that, since the orchestrator reads it without parsing.

@@ -13,8 +13,18 @@ GitHub facts and tooling quirks the model reads before touching a repo setting o
 - Inside a composite action, `github.action_repository` and `github.action_ref` on a nested step name the nested action, not the caller; read them through a bash step's `env:`, not by interpolating them into `run:` directly.
 - Scheduled workflows are disabled after 60 days without a commit to the repo. A counter with a 14-day source window loses rows after a 13-day gap in commits. Dependabot auto-merge, once its gate conditions hold, keeps a repo's schedules alive past the 60-day cutoff; document that either way in the repo's own README.
 
+## GraphQL blocked: REST fallback
+
+`gh` may be absent from a cloud container; a release tarball installed into `~/.local/bin` still works for `gh api` REST calls. GitHub GraphQL can return HTTP 403 for a whole session, which breaks anything that goes through it: `gh pr create`, `gh pr merge --auto`, `gh pr checks`, `gh pr list`, `gh repo view`. REST replacements that worked:
+
+- Open a pull request: `gh api repos/{owner}/{repo}/pulls -f title=... -f head=... -f base=main -f body=...`
+- Arm rebase auto-merge: `gh api -X PUT repos/{owner}/{repo}/pulls/{n}/ccr/auto_merge -f merge_method=REBASE` (a host-provided route; where it is missing, `gh pr merge --auto --rebase` is the normal path)
+- Read CI: `gh api repos/{owner}/{repo}/commits/{sha}/check-runs`
+- Read a failed job's log: `gh api repos/{owner}/{repo}/actions/jobs/{job_id}/logs`
+
 ## Tooling quirks
 
+- Ambient `GH_TOKEN` and `GITHUB_TOKEN` can be placeholder tokens; zizmor forwards them to github.com and fails with a 401 and a Rust backtrace. Run pre-commit as `env -u GH_TOKEN -u GITHUB_TOKEN uv run pre-commit run --all-files` so a placeholder ambient token cannot reach zizmor.
 - Push workflow files with a header-auth fallback when the ambient token lacks the workflow scope:
   ```
   git -c credential.helper= -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$(gh auth token)" | base64 | tr -d '\n')" push ...
@@ -27,11 +37,17 @@ GitHub facts and tooling quirks the model reads before touching a repo setting o
 
 ## Verified about install and listing channels
 
+Verified by a scout, 2026-09-19, and used by `references/build-runbook.md` step 13. Keep `not verified` below until a later scout reports a citation for it; do not list on an unconfirmed channel.
+
 - `npx skills add` does a real `git clone` for any repository outside a four-owner allow list built into the skills CLI (read from its own source, `add.ts`, `git.ts`, `blob.ts`). This is why the skill row of the distribution-shape table in `references/build-runbook.md` counts as a good clonometer fit, not a guess.
-- skills.sh auto-indexes public skill repos and ranks them by install count; nothing needs submitting for a skill to appear there.
-- A Claude Code plugin marketplace is any repository that carries a `.claude-plugin/marketplace.json` file; the official and community marketplace listings additionally need review from the platform owner.
+- skills.sh auto-indexes on `npx skills add` itself, through opt-out telemetry (`DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1`); nothing needs submitting for a skill to appear there.
+- Awesome lists that accept a skill by pull request, no star or age rule found: `hesreallyhim/awesome-claude-code`, `karanb192/awesome-claude-skills`, `VoltAgent/awesome-agent-skills`.
 - SkillsMP and Skills Directory both auto-index public repositories on their own.
-- Not yet verified by a scout: whether Context7, the various awesome lists, and the MCP registries are each free, reliable and actually used as listing channels. Do not list on any of these until a scout reports a citation for it; treat an unconfirmed channel the same as `not verified` in a scout's own output.
+- Context7: submit at a web form, context7.com/add-library. Free, widely used (56.5k stars, 104k+ libraries indexed). Config file support: not verified.
+- MCP registries: the official registry.modelcontextprotocol.io is free, verified by GitHub, DNS or OIDC. Smithery needs `smithery mcp publish`. Glama auto-indexes from GitHub. mcp.so: not verified.
+- Claude Code plugin marketplace: any repository carrying a `.claude-plugin/marketplace.json` file (name, owner, metadata, plugin list). The official directory takes a form at clau.de/plugin-directory-submission. `anthropics/claude-plugins-community` is a read-only mirror, not a submission target.
+- GitHub Marketplace, for an action: public repo, `action.yml` at the root, a unique name, branding set. Publish with the "Publish this Action" checkbox on the release page. The Developer Agreement step is owner-only.
+- GitHub topics: 20 max, set with `PUT /repos/{owner}/{repo}/topics`.
 
 ## Multi-sitting state
 
