@@ -100,7 +100,8 @@
     "dest": "pyproject.toml",
     "set": "boot",
     "when": null,
-    "vars": ["NAME"],
+    "vars": ["NAME", "COVERAGE_FLOOR"],
+    "defaults": {"COVERAGE_FLOOR": "70"},
     "rules": []
   },
   {

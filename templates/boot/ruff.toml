@@ -1,0 +1,8 @@
+# templates/boot/pyproject.toml is a template, not a real project file: its
+# fail_under line is an unquoted {{COVERAGE_FLOOR}} placeholder, so it is not
+# valid TOML until scaffold renders it. Ruff walks up from every file it
+# formats, including templates/boot/.github/pull_request_template.md, and
+# would otherwise try to parse that pyproject.toml as its own config. An
+# empty ruff.toml here becomes the nearest config instead, so ruff never
+# reads the template. It is not part of the manifest and is never stamped
+# into a target repo.

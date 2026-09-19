@@ -67,17 +67,24 @@ def _render(text: str, variables: dict[str, str]) -> str:
 
 
 def _stamped_content(entry: dict, variables: dict[str, str]) -> str:
-    """Render one manifest entry's template file, failing if a var is missing."""
+    """Render one manifest entry's template file, failing if a var is missing.
+
+    A var missing from `variables` falls back to the entry's `defaults` when
+    one is set for it; only a var with neither a supplied value nor a
+    default is a failure.
+    """
     needed = entry.get("vars", [])
-    missing = sorted(name for name in needed if name not in variables)
+    defaults = entry.get("defaults", {})
+    missing = sorted(name for name in needed if name not in variables and name not in defaults)
     if missing:
         raise ScaffoldError(f"missing --var for {', '.join(missing)}")
+    effective = {**defaults, **variables}
     src_path = _TEMPLATES_ROOT / entry["src"]
     try:
         text = src_path.read_text(encoding="utf-8")
     except OSError as error:
         raise ScaffoldError(f"cannot read template {entry['src']}: {error}") from error
-    return _render(text, variables)
+    return _render(text, effective)
 
 
 def _entries_by_dest(manifest: list[dict]) -> dict[str, list[dict]]:

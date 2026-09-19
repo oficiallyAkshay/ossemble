@@ -36,4 +36,4 @@ source = ["scripts/{{NAME}}"]
 
 [tool.coverage.report]
 # Build-stage floor, rises to 100 at the finish stage.
-fail_under = 70
+fail_under = {{COVERAGE_FLOOR}}
