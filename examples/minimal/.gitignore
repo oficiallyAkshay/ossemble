@@ -10,3 +10,8 @@ coverage.xml
 *.local.md
 .DS_Store
 .ossemble/
+# ...except the owner's opt-in record, which NO-003's probe reads out of a
+# CI checkout: an ignored file is absent there, so the rule could never be
+# satisfied in the one place it is enforced.
+!.ossemble/
+!.ossemble/state.json

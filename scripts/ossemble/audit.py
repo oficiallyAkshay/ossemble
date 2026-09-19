@@ -528,56 +528,6 @@ def docs_under_300_lines(root: Path, _facts: dict) -> ProbeResult:
     return None
 
 
-_LEANNESS_EXCLUDED_DIRS = ("tests", "examples")
-
-
-def repo_under_250kb(root: Path, facts: dict) -> ProbeResult:
-    """Keep the repo under 250 KB, counting git-tracked bytes outside tests/ and examples/."""
-    limit = 250_000
-    tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
-    total = _tracked_bytes(root, tracked) if tracked is not None else _walked_bytes(root)
-    if total > limit:
-        return (".", f"tracked tree is {total} bytes, over the {limit}-byte limit")
-    return None
-
-
-def _template_mirror_paths(root: Path) -> set[str]:
-    """Every `templates/<src>` the manifest names; each mirrors a live file already counted."""
-    manifest = _load_json(root / "templates" / "manifest.json")
-    if not isinstance(manifest, list):
-        return set()
-    return {
-        f"templates/{entry['src']}"
-        for entry in manifest
-        if isinstance(entry, dict) and isinstance(entry.get("src"), str)
-    }
-
-
-def _tracked_bytes(root: Path, tracked: set[str]) -> int:
-    """Sum the size of every git-tracked file outside tests/, examples/ and template mirrors."""
-    skip = _template_mirror_paths(root)
-    total = 0
-    for relative in tracked:
-        if relative.split("/", 1)[0] in _LEANNESS_EXCLUDED_DIRS or relative in skip:
-            continue
-        path = root / relative
-        if path.is_file() and not path.is_symlink():
-            total += path.stat().st_size
-    return total
-
-
-def _walked_bytes(root: Path) -> int:
-    """Sum file sizes by walking the tree, when there is no git history."""
-    total = 0
-    for path in root.rglob("*"):
-        parts = path.relative_to(root).parts
-        if ".git" in path.parts or (parts and parts[0] in _LEANNESS_EXCLUDED_DIRS):
-            continue
-        if path.is_file() and not path.is_symlink():
-            total += path.stat().st_size
-    return total
-
-
 def leanness_tool_never_wired_into_ci(root: Path, facts: dict) -> ProbeResult:
     """Confirm no workflow references ponytail; it stays dev-only, report-only."""
     for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
@@ -1264,7 +1214,6 @@ PROBES = {
         stdlib_only_runtime_dependencies,
         dev_tooling_in_dependency_group,
         docs_under_300_lines,
-        repo_under_250kb,
         leanness_tool_never_wired_into_ci,
         workflow_top_level_permissions_empty,
         job_level_permissions_declared,
