@@ -24,8 +24,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import argparse
+    import http.client
     from collections.abc import Callable
-    from typing import NoReturn
+    from typing import IO
 
 _CANDIDATE_RE = re.compile(r"^[a-z][a-z0-9]*$")
 _TIMEOUT_SECONDS = 10
@@ -129,15 +130,17 @@ def _run_check(candidate: str, check_name: str, probe: Callable[[], str]) -> str
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Refuse every redirect instead of following it."""
 
-    def redirect_request(
+    def redirect_request(  # noqa: PLR0913, PLR0917 -- must match the base class exactly
         self,
-        _req: urllib.request.Request,
-        _fp: object,
-        _code: int,
-        _msg: str,
-        _headers: object,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
         newurl: str,
-    ) -> NoReturn:
+    ) -> urllib.request.Request | None:
+        """Match `HTTPRedirectHandler`'s exact signature; every redirect is refused."""
+        del req, fp, code, msg, headers
         raise urllib.error.URLError(f"refusing to follow a redirect to {newurl}")
 
 

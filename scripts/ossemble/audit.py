@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 
 if TYPE_CHECKING:
     import argparse
@@ -239,10 +239,10 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
         owner_repo = _remote_owner_repo(root)
         if owner_repo:
             try:
-                repo_settings = _gh_api(f"repos/{owner_repo}")
+                repo_settings = cast("dict", _gh_api(f"repos/{owner_repo}"))
                 facts["repo_settings"] = repo_settings
                 facts["public"] = not bool(repo_settings.get("private", True))
-                rulesets = _gh_api(f"repos/{owner_repo}/rulesets") or []
+                rulesets = cast("list", _gh_api(f"repos/{owner_repo}/rulesets") or [])
                 for candidate in rulesets:
                     if candidate.get("name") == "main":
                         facts["ruleset"] = _gh_api(f"repos/{owner_repo}/rulesets/{candidate['id']}")
@@ -945,7 +945,7 @@ def state_file_holds_only_allowed_keys(root: Path, _facts: dict) -> ProbeResult:
     state = _load_json(root / ".ossemble" / "state.json")
     if state is None:
         return None
-    extra = sorted(set(state) - ALLOWED_STATE_KEYS)
+    extra = sorted(set(cast("dict", state)) - ALLOWED_STATE_KEYS)
     if extra:
         return (".ossemble/state.json", f"holds keys the repo could derive on its own: {extra}")
     return None
@@ -956,7 +956,7 @@ def no_gate_lowering_left_open_at_finish_stage(root: Path, _facts: dict) -> Prob
     state = _load_json(root / ".ossemble" / "state.json")
     if not state:
         return None
-    lowered = state.get("lowered")
+    lowered = cast("dict", state).get("lowered")
     if lowered:
         return (".ossemble/state.json", f"a gate is still recorded as lowered: {lowered}")
     return None

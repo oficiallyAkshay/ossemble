@@ -17,6 +17,7 @@ dev = [
     "pytest-cov==7.1.0",
     "diff-cover==10.5.1",
     "pre-commit==4.6.2",
+    "ty==0.0.82",
 ]
 
 [tool.pytest.ini_options]
@@ -72,3 +73,8 @@ source = ["scripts/ossemble"]
 
 [tool.coverage.report]
 fail_under = 100
+
+[tool.ty.environment]
+# A flat scripts/ossemble layout imports its own modules as top-level
+# names, so both that directory and the repo root must resolve as sources.
+root = [".", "scripts/ossemble"]
