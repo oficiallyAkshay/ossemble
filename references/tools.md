@@ -2,28 +2,28 @@
 
 Read by the model at build-runbook step 6 (tighten) and step 10 (recommend) to pick tools per repo. This table is data the model reads, not code the audit runs; `audit` only checks that a picked tool is configured and sitting at its finish value.
 
-A few rows are always on whenever their trigger exists in the repo being built, not opt-in per language: a secrets scan, and workflow lint, workflow security and pin verification whenever any workflow file exists. Everything else is a Python pick, a public-only pick, or an explicit owner recommendation from build-runbook step 10.
+A few rows are always on whenever their trigger exists in the repo being built, not opt-in per language: a secrets scan, and workflow lint, workflow security and pin verification whenever any workflow file exists. (HRD-007, HRD-005) Everything else is a Python pick, a public-only pick, or an explicit owner recommendation from build-runbook step 10.
 
 | Tool | Applies when | Cost | Always or conditional | Stage |
 | --- | --- | --- | --- | --- |
-| gitleaks | any repo, full history | free | always | build, day zero |
-| pinact | any workflow file exists | free | always once a workflow exists | build, day zero |
+| gitleaks | any repo, full history (HRD-007) | free | always | build, day zero |
+| pinact | any workflow file exists (HRD-005) | free | always once a workflow exists | build, day zero |
 | actionlint | any workflow file exists | free | always once a workflow exists | build, day zero |
 | zizmor | any workflow file exists | free | always once a workflow exists | build, day zero |
-| ruff (`select = ["ALL"]` at finish) | Python detected | free | conditional, Python pick | build (default rules), finish (full set) |
+| ruff (`select = ["ALL"]` at finish) (HRD-009) | Python detected | free | conditional, Python pick | build (default rules), finish (full set) |
 | vulture, with a name whitelist for fixtures | Python detected | free | conditional, Python pick | finish |
 | deptry, with a module-name map | Python detected with declared dependencies | free | conditional, Python pick | finish |
-| pip-audit, its own workflow, outside the gate | Python detected with a `pyproject.toml` | free | conditional, Python pick | finish; weekly and on PRs touching `pyproject.toml` |
-| diff-cover, one CI leg | tests exist | free | conditional | finish |
-| codecov, tokenless via OIDC, non-required | coverage data exists | free | conditional | finish; project and patch targets at 100, kept non-required because fork PRs cannot upload |
-| CodeQL, Python and Actions | public repo with code (or private with Advanced Security) | free on public | recommendation | finish, own workflow, push, PR and weekly |
-| OpenSSF Scorecard | public repo | free | recommendation | finish, own workflow, push to main and weekly, `publish_results: true` |
-| CodeRabbit, 13-line `.coderabbit.yaml` | public repo with a PR flow | free on public, paid on private | recommendation, needs the owner's passkey | finish, advisory only, never a required check |
-| Dependabot auto-merge (`dependabot/fetch-metadata`, `gh pr merge --auto --rebase`) | coverage 100 enforced, a required CI check, hash-pinned actions all hold | free | recommendation | finish; keeps scheduled workflows alive past GitHub's 60-day cutoff |
-| deps.dev API v3 | prior-art check needs staleness facts | free, no auth | conditional, judgment step not code | step 1, define |
-| ecosyste.ms | prior-art subject has no deps.dev entry | free | conditional, judgment step not code | step 1, define |
+| pip-audit, its own workflow, outside the gate (CI-005) | Python detected with a `pyproject.toml` | free | conditional, Python pick | finish; weekly and on PRs touching `pyproject.toml` |
+| diff-cover, one CI leg (CI-006) | tests exist | free | conditional | finish |
+| codecov, tokenless via OIDC, non-required (CI-006) | coverage data exists | free | conditional | finish; project and patch targets at 100, kept non-required because fork PRs cannot upload |
+| CodeQL, Python and Actions (CI-009) | public repo with code (or private with Advanced Security) | free on public | recommendation | finish, own workflow, push, PR and weekly |
+| OpenSSF Scorecard (CI-008) | public repo | free | recommendation | finish, own workflow, push to main and weekly, `publish_results: true` |
+| CodeRabbit, 13-line `.coderabbit.yaml` (REV-004) | public repo with a PR flow | free on public, paid on private | recommendation, needs the owner's passkey | finish, advisory only, never a required check |
+| Dependabot auto-merge (`dependabot/fetch-metadata`, `gh pr merge --auto --rebase`) (CI-010) | coverage 100 enforced, a required CI check, hash-pinned actions all hold | free | recommendation | finish; keeps scheduled workflows alive past GitHub's 60-day cutoff |
+| deps.dev API v3 | prior-art check needs staleness facts (SCP-003) | free, no auth | conditional, judgment step not code | step 1, define |
+| ecosyste.ms | prior-art subject has no deps.dev entry (SCP-003) | free | conditional, judgment step not code | step 1, define |
 | skills.sh install badge | shape includes skill | free | conditional | step 13, list |
-| uv dependency groups (PEP 735) | dev tooling needed with no package to build | free | always for ossemble-built repos with dev tooling | build |
+| uv dependency groups (PEP 735) (STR-002) | dev tooling needed with no package to build | free | always for ossemble-built repos with dev tooling | build |
 | prek | measured first against the existing `.pre-commit-config.yaml`; same config either way | free | conditional, adopt only if the measured speed gain holds | either stage, reversible |
 
 ## Measured, not yet adopted anywhere
@@ -36,4 +36,4 @@ Copier (the only real fit for `scaffold`, but it is a dependency with its own te
 
 ## Never for a counter
 
-Publishing a thin npm or PyPI wrapper only to get a download count is cut regardless of shape. The durable counter for something ossemble builds is an opt-in clonometer ledger plus the skills.sh page, decided at build-runbook step 1, never a package that exists only to be counted.
+Publishing a thin npm or PyPI wrapper only to get a download count is cut regardless of shape. (NO-005) The durable counter for something ossemble builds is an opt-in clonometer ledger plus the skills.sh page, decided at build-runbook step 1, never a package that exists only to be counted. (DST-001)
