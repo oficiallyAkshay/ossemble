@@ -2153,3 +2153,77 @@ def test_ruleset_never_requires_reviews_or_thread_resolution_fails_when_branches
         audit.ruleset_never_requires_reviews_or_thread_resolution(tmp_path, facts(ruleset=broken))
         is not None
     )
+
+
+# --------------------------------------------------------- language scoping
+
+
+def test_gather_facts_sets_language_to_python_when_pyproject_toml_exists(tmp_path) -> None:
+    write(tmp_path, "pyproject.toml", "[project]\ndependencies = []\n")
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "python"
+
+
+def test_gather_facts_sets_language_to_other_without_pyproject_or_git(tmp_path) -> None:
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "other"
+
+
+def test_gather_facts_sets_language_to_python_from_a_tracked_py_file_outside_tests(
+    tmp_path,
+) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, "scripts/tool.py", "print('hi')\n")
+    subprocess.run(["git", "add", "scripts/tool.py"], cwd=tmp_path, check=True)
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "python"
+
+
+def test_gather_facts_sets_language_to_other_when_the_only_py_file_is_under_tests(
+    tmp_path,
+) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, "tests/test_thing.py", "def test_it(): pass\n")
+    write(tmp_path, "notes.txt", "not python\n")
+    subprocess.run(["git", "add", "tests/test_thing.py", "notes.txt"], cwd=tmp_path, check=True)
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "other"
+
+
+def test_gather_facts_sets_language_to_other_when_the_only_py_file_is_under_a_dot_dir(
+    tmp_path,
+) -> None:
+    """A `.py` file under a dot-prefixed directory, a plugin shim say, is not the repo's source."""
+    init_git_repo(tmp_path)
+    write(tmp_path, ".hermes-plugin/__init__.py", "print('hi')\n")
+    subprocess.run(["git", "add", ".hermes-plugin/__init__.py"], cwd=tmp_path, check=True)
+
+    result = audit._gather_facts(tmp_path, use_api=False)
+
+    assert result["language"] == "other"
+
+
+def test_audit_of_a_non_python_repo_has_no_pyproject_rows(tmp_path) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, "README.md", "# a markdown-only repo\n")
+
+    rows = audit.gaps(tmp_path)
+
+    assert {row["id"] for row in rows}.isdisjoint({"STR-001", "STR-002", "TST-001", "TST-002"})
+
+
+def test_audit_of_a_python_repo_without_pyproject_still_flags_str_001(tmp_path) -> None:
+    init_git_repo(tmp_path)
+    write(tmp_path, "app.py", "print('hi')\n")
+    subprocess.run(["git", "add", "app.py"], cwd=tmp_path, check=True)
+
+    rows = audit.gaps(tmp_path)
+
+    assert "STR-001" in {row["id"] for row in rows}
