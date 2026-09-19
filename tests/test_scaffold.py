@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,12 @@ import pytest
 from scripts.ossemble import scaffold
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _this_repos_coverage_floor() -> str:
+    """Read this repo's own live fail_under, so the floor can move without drift."""
+    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(data["tool"]["coverage"]["report"]["fail_under"])
 
 
 def _make_args(path=".", set_name="boot", variables=None, check=False) -> argparse.Namespace:
@@ -129,6 +136,77 @@ def test_run_fails_one_line_on_stderr_when_a_needed_var_is_not_supplied(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert captured.err == "ossemble scaffold: missing --var for NAME\n"
+
+
+def test_run_fills_a_missing_var_from_the_entrys_default(custom_templates, tmp_path) -> None:
+    (custom_templates / "greeting.txt").write_text("hello {{NAME}}\n", encoding="utf-8")
+    _write_manifest(
+        custom_templates,
+        [
+            {
+                "src": "greeting.txt",
+                "dest": "greeting.txt",
+                "set": "boot",
+                "vars": ["NAME"],
+                "defaults": {"NAME": "world"},
+                "rules": [],
+            }
+        ],
+    )
+
+    exit_code = scaffold.run(_make_args(path=str(tmp_path), set_name="boot"))
+
+    assert exit_code == 0
+    assert (tmp_path / "greeting.txt").read_text(encoding="utf-8") == "hello world\n"
+
+
+def test_run_prefers_a_supplied_var_over_the_entrys_default(custom_templates, tmp_path) -> None:
+    (custom_templates / "greeting.txt").write_text("hello {{NAME}}\n", encoding="utf-8")
+    _write_manifest(
+        custom_templates,
+        [
+            {
+                "src": "greeting.txt",
+                "dest": "greeting.txt",
+                "set": "boot",
+                "vars": ["NAME"],
+                "defaults": {"NAME": "world"},
+                "rules": [],
+            }
+        ],
+    )
+
+    exit_code = scaffold.run(
+        _make_args(path=str(tmp_path), set_name="boot", variables=["NAME=widget"])
+    )
+
+    assert exit_code == 0
+    assert (tmp_path / "greeting.txt").read_text(encoding="utf-8") == "hello widget\n"
+
+
+def test_run_fails_one_line_on_stderr_when_a_var_with_no_default_is_not_supplied(
+    custom_templates, tmp_path, capsys
+) -> None:
+    (custom_templates / "greeting.txt").write_text("hello {{NAME}} {{OTHER}}\n", encoding="utf-8")
+    _write_manifest(
+        custom_templates,
+        [
+            {
+                "src": "greeting.txt",
+                "dest": "greeting.txt",
+                "set": "boot",
+                "vars": ["NAME", "OTHER"],
+                "defaults": {"NAME": "world"},
+                "rules": [],
+            }
+        ],
+    )
+
+    exit_code = scaffold.run(_make_args(path=str(tmp_path), set_name="boot"))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == "ossemble scaffold: missing --var for OTHER\n"
 
 
 def test_run_fails_one_line_on_stderr_when_the_manifest_file_is_missing(
@@ -521,7 +599,11 @@ class TestRealBootTemplatesMatchThisRepo:
         self, tmp_path
     ) -> None:
         exit_code = scaffold.run(
-            _make_args(path=str(tmp_path), set_name="boot", variables=["NAME=ossemble"])
+            _make_args(
+                path=str(tmp_path),
+                set_name="boot",
+                variables=["NAME=ossemble", f"COVERAGE_FLOOR={_this_repos_coverage_floor()}"],
+            )
         )
 
         assert exit_code == 0
