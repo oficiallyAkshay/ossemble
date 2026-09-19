@@ -1,20 +1,20 @@
 # Agent roster
 
-Every role below has a prompt file under `agents/`; a role is added to the roster by adding a file, not by editing code. Output shapes for scout, builder and auditor are `references/contract.md` section 7, the source of truth; nothing here or in a role's own prompt file restates them. Judge, verifier and recoverer are not in the contract, since the script never parses their output; their shapes live only in their own prompt files under `agents/`.
+Every role below has a prompt file under `agents/`; a role is added to the roster by adding a file, not by editing code. Output shapes for scout, builder and auditor are `references/contract.md` section 7, the source of truth; nothing here or in a role's own prompt file restates them. Judge, verifier and recoverer are not in the contract, since the script never parses their output; their shapes live only in their own prompt files under `agents/`. How many builders run in a wave is set at `references/build-runbook.md` step 4, not here.
 
 | Role | Model | Tools | Input | Output |
 | --- | --- | --- | --- | --- |
 | Orchestrator | main session, one-line commands only | all, but runs almost none of them itself | the plan and `rules/rules.json` | owns the shared files, dispatches from the ownership map, arms auto-merge (PRC-003), records state |
-| Scout | small fast model | read-only, web | one question | shape at contract.md section 7 |
-| Builder | Sonnet | edit, own worktree only (PRC-001) | the file ownership list, `references/contract.md`, the tests it must pass | shape at contract.md section 7 (see Builder brief below for what goes into its brief) |
-| Verifier | Sonnet | read-only | the diff and the builder's claims | each claim marked confirmed, refuted, or untestable, with line references |
-| Judge | Sonnet | read-only | contradicting findings, or several name or design candidates, plus `rules/rules.json` | a decision that cites rule ids and states its measured basis |
-| Auditor | Sonnet | read-only | the tree, and which audit (repo or CI) | shape at contract.md section 7 |
-| Recoverer | small fast model | read-only | a dead agent's worktree | what was left behind, and the next step |
+| Scout | small fast model (Haiku) | read-only, web | one question | shape at contract.md section 7 |
+| Builder | mid-tier model (Sonnet) | edit, own worktree only (PRC-001) | the file ownership list, `references/contract.md`, the tests it must pass | shape at contract.md section 7 (see Builder brief below for what goes into its brief) |
+| Verifier | mid-tier model (Sonnet) | read-only | the diff and the builder's claims | each claim marked confirmed, refuted, or untestable, with line references |
+| Judge | mid-tier model (Sonnet) | read-only | contradicting findings, or several name or design candidates, plus `rules/rules.json` | a decision that cites rule ids and states its measured basis |
+| Auditor | mid-tier model (Sonnet) | read-only | the tree, and which audit (repo or CI) | shape at contract.md section 7 |
+| Recoverer | small fast model (Haiku) | read-only | a dead agent's worktree | what was left behind, and the next step |
 
 Survey scout: a scout variant, read-only, over one comparable public repo instead of a question. Output: the audit's rows classified real, false positive or not applicable, then `verdict | item | evidence | reason` lines for what that repo carries that ossemble lacks.
 
-Model choice is the cheapest reliable one for the job: Sonnet for anything that writes code or prose a stranger will read, a small fast model for lookups, one-line edits and reading a leftover worktree. (PRC-002) The orchestrator itself never edits a file; it only dispatches, merges and records.
+Model choice is the cheapest reliable one for the job: a mid-tier model (Sonnet) for anything that writes code or prose a stranger will read, a small fast model (Haiku) for lookups, one-line edits and reading a leftover worktree. (PRC-002) The orchestrator itself never edits a file; it only dispatches, merges and records. (PRC-017)
 
 The verifier is opt-in, not run on every builder PR. It runs only when the owner asks to read a pass before it merges, which is the default for README rewrites (`references/build-runbook.md` step 9) and otherwise only on explicit request. (PRC-004) Everywhere else, CI is the verification and auto-merge is armed the moment the PR opens. (PRC-003)
 
