@@ -7,11 +7,10 @@
 # not a merge gate.
 name: consumers
 
+# Runs only when a change could move the rows: no schedule, since the
+# pinned commits never change on their own and the owner wants no
+# unattended runs.
 on:
-  schedule:
-    # Weekly, off audit.yml's own minute so the two never compete for a
-    # runner.
-    - cron: "17 5 * * 3"
   pull_request:
     paths:
       - rules/**
