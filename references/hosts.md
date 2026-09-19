@@ -34,13 +34,14 @@ GitHub facts and tooling quirks the model reads before touching a repo setting o
 - GitHub's React settings pages (release, security, ruleset) accept `form_input` for checkboxes and selects, and a DOM `click()` for buttons; a browser tool driving them must verify the result by reading state back, never by trusting the click. An alert-dialog confirmation accepts neither form and needs a different path.
 - A browser automation tool can go dark while any tab in its group sits on a site it cannot classify; close that tab and retry. The same tool can also disconnect transiently mid-batch; retry the same batch once before treating it as broken.
 - A `language: system` pre-commit hook that names a virtualenv executable breaks a plain `git commit` outside that venv; wrap the hook in `uv run --no-sync` so a plain commit still works.
+- `gh api` on a repository other than the session's own returns 403 through the cloud proxy; `audit --api` only works on the repo the session is bound to. Verified 2026-09-19.
 
 ## Verified about install and listing channels
 
 Verified by a scout, 2026-09-19, and used by `references/build-runbook.md` step 13. Keep `not verified` below until a later scout reports a citation for it; do not list on an unconfirmed channel. (DST-005)
 
 - `npx skills add` does a real `git clone` for any repository outside a four-owner allow list built into the skills CLI (read from its own source, `add.ts`, `git.ts`, `blob.ts`). This is why the skill row of the distribution-shape table in `references/build-runbook.md` counts as a good clonometer fit, not a guess.
-- skills.sh auto-indexes on `npx skills add` itself, through opt-out telemetry (`DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1`); nothing needs submitting for a skill to appear there.
+- skills.sh auto-indexes on `npx skills add` itself, through opt-out telemetry (`DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1`); nothing needs submitting for a skill to appear there. A multi-skill repo controls its own grouping on the skills.sh directory page with a `skills.sh.json` file (seen at vercel-labs/agent-skills); a single-skill repo needs nothing.
 - Awesome lists that accept a skill by pull request, no star or age rule found: `hesreallyhim/awesome-claude-code`, `karanb192/awesome-claude-skills`, `VoltAgent/awesome-agent-skills`.
 - SkillsMP and Skills Directory both auto-index public repositories on their own.
 - Context7: submit at a web form, context7.com/add-library. Free, widely used (56.5k stars, 104k+ libraries indexed). Config file support: not verified.

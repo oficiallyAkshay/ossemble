@@ -12,6 +12,8 @@ Every role below has a prompt file under `agents/`; a role is added to the roste
 | Auditor | Sonnet | read-only | the tree, and which audit (repo or CI) | shape at contract.md section 7 |
 | Recoverer | small fast model | read-only | a dead agent's worktree | what was left behind, and the next step |
 
+Survey scout: a scout variant, read-only, over one comparable public repo instead of a question. Output: the audit's rows classified real, false positive or not applicable, then `verdict | item | evidence | reason` lines for what that repo carries that ossemble lacks.
+
 Model choice is the cheapest reliable one for the job: Sonnet for anything that writes code or prose a stranger will read, a small fast model for lookups, one-line edits and reading a leftover worktree. (PRC-002) The orchestrator itself never edits a file; it only dispatches, merges and records.
 
 The verifier is opt-in, not run on every builder PR. It runs only when the owner asks to read a pass before it merges, which is the default for README rewrites (`references/build-runbook.md` step 9) and otherwise only on explicit request. (PRC-004) Everywhere else, CI is the verification and auto-merge is armed the moment the PR opens. (PRC-003)
