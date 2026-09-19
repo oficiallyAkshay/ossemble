@@ -15,13 +15,15 @@ One owner per path. Disjoint owners build in parallel.
 | `SKILL.md`, `scripts/ossemble/name.py`, `scripts/ossemble/resume.py`, `tests/test_name.py`, `tests/test_resume.py` | the skill entry, the name screen, resume | builder D |
 | `README.md`, `CONTRIBUTING.md` | human docs, written at docs time | docs builder |
 
+A test the orchestrator owns asserts only the interface: that a subcommand is registered, answers `--help` under its own name and exits with the documented codes. It never asserts what a stub does, because the first real implementation replaces the stub and must not fail a shared test. (Found on the first self-build: three builders failed CI at once on one such assertion.)
+
 ## 2. The script
 
 Run as `python3 scripts/ossemble <subcommand>`. Python 3.11 or newer, standard library only. Each subcommand is one module exposing `add_parser(subparsers)` and `run(args) -> int`.
 
 | Subcommand | Arguments | Does |
 |---|---|---|
-| `audit` | `[path]` `--json` `--api` | checks a repo against `rules/rules.json`, prints the gap table |
+| `audit` | `[path]` `--json` `--api` | checks the repo at `path` against ossemble's own `rules/rules.json`, loaded from beside the script and never from the target, and prints the gap table. Exposes `gaps(root, *, use_api=False) -> list[dict]` for `resume` |
 | `floor` | `[path]` `--coverage-xml FILE` | raises `fail_under` to the achieved coverage, rounded down; never lowers it |
 | `scaffold` | `[path]` `--set NAME` `--var KEY=VALUE` `--check` | stamps a template set; `--check` reports drift and writes nothing |
 | `name` | `CANDIDATE...` `--json` | screens every candidate on every registry |
@@ -84,6 +86,7 @@ The stage is read from the repo, never stored: a repo is in the finish stage whe
 | `set` | `boot`, `finish`, or the name of an optional part such as `scorecard` |
 | `when` | same condition object as a rule |
 | `vars` | names the template needs, filled as `{{NAME}}` and nothing else. No logic in templates |
+| `defaults` | optional object: the value a var takes when `--var` does not supply it. Data, not logic. The boot `pyproject.toml` takes `COVERAGE_FLOOR` with default `70`, because the floor rises after every wave and a raised floor is not drift |
 | `rules` | the rule ids this template satisfies |
 
 `scaffold` is idempotent: stamping twice changes nothing. It never overwrites a file that differs from every version it has stamped; it reports drift and exits 1. Every template must pass its own gate once stamped, and `examples/` holds a synthetic repo that CI rebuilds byte for byte.
@@ -101,9 +104,9 @@ One file in the target repo, `.ossemble/state.json`, ignored by git. It holds on
 | `gos` | each outward-facing step the owner approved, with the date |
 | `lowered` | gates lowered temporarily: gate, from, to, why |
 | `findings` | the audit ledger: id, severity, confirmed or plausible, the fixing pull request |
-| `checks` | for each expensive model check: the commit it ran at and a hash of the files it read |
+| `checks` | for each expensive model check: the commit it ran at and a hash of the files it read. `checks.audit` also holds `gaps`, the rule ids that failed at that commit; a regression is a gap present now and absent there |
 
-An expensive check is skipped when its commit and hash still match. `resume` reads this file, runs `audit`, and prints: the stage, every regression (a rule that passed at the recorded commit and fails now), any entry in `lowered`, and the next runbook step.
+An expensive check is skipped when its commit and hash still match. `resume` reads this file, runs `audit.gaps`, and prints: the stage, the current gap count, every regression (a gap absent from `checks.audit.gaps` at the recorded commit and present now), any entry in `lowered`, and the next runbook step. It then writes the new baseline into `checks.audit`, the one write `resume` makes.
 
 ## 7. Agent outputs
 
