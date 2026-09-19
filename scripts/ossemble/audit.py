@@ -232,6 +232,7 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
         "stage": _stage_from_config(pyproject),
         "repo_settings": None,
         "ruleset": None,
+        "automated_security_fixes": None,
         "workflow_items": workflow_items,
         "pyproject": pyproject,
         "tracked_files": tracked_files,
@@ -248,6 +249,9 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
                     if candidate.get("name") == "main":
                         facts["ruleset"] = _gh_api(f"repos/{owner_repo}/rulesets/{candidate['id']}")
                         break
+                facts["automated_security_fixes"] = cast(
+                    "dict", _gh_api(f"repos/{owner_repo}/automated-security-fixes")
+                )
             except (RuntimeError, OSError, json.JSONDecodeError, KeyError):
                 pass
     return facts
@@ -1113,15 +1117,22 @@ def wiki_and_projects_disabled(_root: Path, facts: dict) -> ProbeResult:
 
 
 def dependabot_alerts_and_security_updates_enabled(_root: Path, facts: dict) -> ProbeResult:
-    """Turn on Dependabot alerts and security updates."""
+    """Turn on Dependabot alerts and security updates.
+
+    A private repo without Advanced Security omits security_and_analysis from
+    the repo settings, so we fall back to the automated-security-fixes
+    endpoint when the status is missing.
+    """
     settings = facts.get("repo_settings")
     if settings is None:
         return ("gh api repos", "could not read repo settings")
-    status = (
-        settings.get("security_and_analysis", {})
-        .get("dependabot_security_updates", {})
-        .get("status")
-    )
+    analysis = settings.get("security_and_analysis") or {}
+    status = analysis.get("dependabot_security_updates", {}).get("status")
+    if status is None:
+        fallback = facts.get("automated_security_fixes") or {}
+        if fallback.get("enabled") and not fallback.get("paused"):
+            return None
+        return ("gh api repos", "dependabot_security_updates is not enabled")
     if status != "enabled":
         return ("gh api repos", "dependabot_security_updates is not enabled")
     return None
@@ -1142,7 +1153,7 @@ def secret_scanning_and_push_protection_enabled(_root: Path, facts: dict) -> Pro
     settings = facts.get("repo_settings")
     if settings is None:
         return ("gh api repos", "could not read repo settings")
-    analysis = settings.get("security_and_analysis", {})
+    analysis = settings.get("security_and_analysis") or {}
     if analysis.get("secret_scanning", {}).get("status") != "enabled":
         return ("gh api repos", "secret_scanning is not enabled")
     if analysis.get("secret_scanning_push_protection", {}).get("status") != "enabled":
@@ -1155,7 +1166,8 @@ def copilot_autofix_for_codeql_enabled(_root: Path, facts: dict) -> ProbeResult:
     settings = facts.get("repo_settings")
     if settings is None:
         return ("gh api repos", "could not read repo settings")
-    status = settings.get("security_and_analysis", {}).get("copilot_autofix", {}).get("status")
+    analysis = settings.get("security_and_analysis") or {}
+    status = analysis.get("copilot_autofix", {}).get("status")
     if status != "enabled":
         return ("gh api repos", "Copilot Autofix for CodeQL is not enabled")
     return None
@@ -1166,11 +1178,8 @@ def no_private_vulnerability_reporting(_root: Path, facts: dict) -> ProbeResult:
     settings = facts.get("repo_settings")
     if settings is None:
         return ("gh api repos", "could not read repo settings")
-    status = (
-        settings.get("security_and_analysis", {})
-        .get("private_vulnerability_reporting", {})
-        .get("status")
-    )
+    analysis = settings.get("security_and_analysis") or {}
+    status = analysis.get("private_vulnerability_reporting", {}).get("status")
     if status == "enabled":
         return ("gh api repos", "private vulnerability reporting is enabled")
     return None
