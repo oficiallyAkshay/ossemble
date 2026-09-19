@@ -21,7 +21,7 @@
   },
   {
     "id": "CI-003",
-    "text": "Key workflow concurrency by ref on pull requests with cancel-in-progress, and by commit sha on pushes, for any workflow whose `on:` includes pull_request or push; a workflow triggered only by schedule, workflow_dispatch or workflow_call has no such run to key and is exempt.",
+    "text": "Key workflow concurrency by ref on pull requests with cancel-in-progress, and by commit sha on pushes, for any workflow whose `on:` includes pull_request or push; a workflow triggered only by schedule, workflow_dispatch or workflow_call has no such run to key and is exempt; every workflow template ships with that keying, checked by actionlint and zizmor over `templates/` as well as `.github/workflows/`.",
     "basis": "prompt section 8",
     "category": "gates and CI",
     "kind": "default",
@@ -586,6 +586,42 @@
     "probe": "no_gate_lowering_left_open_at_finish_stage"
   },
   {
+    "id": "PRC-012",
+    "text": "Have a test the orchestrator owns assert only the interface, meaning registration, help text and exit codes, never a stub's behaviour, so a builder replacing the stub does not fail a shared test.",
+    "basis": "on the first self-build three builders failed CI at once on one such assertion (2026-09-19)",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-013",
+    "text": "Name exactly one owner per path in the ownership map, so disjoint owners build in parallel and a shared file stays with the orchestrator.",
+    "basis": "the four wave-one builders merged with zero conflicts because no path had two owners",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-014",
+    "text": "Delete `.ossemble/state.json` once the repo is done, since a finished repo has no live process attached.",
+    "basis": "the owner's rule that a finished repo has no live process attached",
+    "category": "process",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-015",
+    "text": "Never let a builder edit a gate's own configuration to get green; fix the code instead, or have the orchestrator lower the gate and record it.",
+    "basis": "the recorded-lowering rule plus the final check that refuses to pass while a gate is lowered",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
+    "check": "judgment"
+  },
+  {
     "id": "PRV-001",
     "text": "Commit under the repo's no-reply identity, never a personal name or email.",
     "basis": "hard rules; prompt section 3",
@@ -852,6 +888,15 @@
     "id": "STR-006",
     "text": "Delete one-caller wrappers and dead code once a measured pass finds them; reject a cut that a test import or a stated spec line requires.",
     "basis": "prompt section 4; PLAN.md, the split rule",
+    "category": "structure and leanness",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "STR-007",
+    "text": "Land each accepted cut as its own pull request, and never write a test for code that is about to be removed.",
+    "basis": "the delete, then test, then audit order of the runbook; writing tests for code about to go was measured as waste in the leanness pass",
     "category": "structure and leanness",
     "kind": "default",
     "stage": "finish",
