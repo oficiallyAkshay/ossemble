@@ -44,7 +44,6 @@
     "repo": "github/ruleset-recipes",
     "commit": "82adf8954a5cafb9722c18c421b9834c24ec0cd0",
     "rows": [
-      "HRD-008  .github/dependabot.yml",
       "PRV-001  ."
     ]
   },

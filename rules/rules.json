@@ -339,8 +339,8 @@
   },
   {
     "id": "HRD-008",
-    "text": "Group every Dependabot package-ecosystem update weekly with a seven day cooldown, for any ecosystem; read `.github/dependabot.yml` or `.yaml`, whichever GitHub itself reads.",
-    "basis": "HANDOFF new material for rules plus audit",
+    "text": "Group every Dependabot package-ecosystem update weekly with a seven day cooldown, for any ecosystem, where a workflow or a dependency manifest exists; read `.github/dependabot.yml` or `.yaml`, whichever GitHub itself reads.",
+    "basis": "HANDOFF new material for rules plus audit; scoped after the consumers eval (PR 31) flagged a false positive on github/ruleset-recipes, a repo with no workflow and no manifest",
     "category": "hardening",
     "kind": "default",
     "stage": "build",
