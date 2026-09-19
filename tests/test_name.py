@@ -175,6 +175,25 @@ def test_run_returns_one_when_any_candidate_is_not_free(monkeypatch, capsys) -> 
     assert capsys.readouterr().out.splitlines() == ["taken  TAKEN  npm:taken"]
 
 
+def test_run_returns_one_when_a_candidate_is_errored_rather_than_taken(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(name.shutil, "which", lambda _tool: None)
+    monkeypatch.setattr(
+        name,
+        "_screen",
+        lambda candidate, use_gh: {
+            "candidate": candidate,
+            "status": "error",
+            "free": False,
+            "checks": {**dict.fromkeys(name._CHECK_ORDER, "free"), "github_user": "error"},
+        },
+    )
+
+    exit_code = name.run(argparse.Namespace(candidates=["errored"], json=False))
+
+    assert exit_code == 1
+    assert capsys.readouterr().out.splitlines() == ["errored  ERROR  github_user:error"]
+
+
 def test_run_uses_gh_when_it_is_on_path(monkeypatch) -> None:
     monkeypatch.setattr(name.shutil, "which", lambda tool: "/usr/bin/gh" if tool == "gh" else None)
     seen = {}
@@ -402,9 +421,27 @@ def test_check_github_user_is_free_when_gh_api_reports_a_404(monkeypatch) -> Non
     assert name._check_github_user("ossemble", use_gh=True) == "free"
 
 
-def test_check_github_user_is_error_when_gh_api_fails_for_another_reason(
+def test_check_github_user_falls_back_and_is_honoured_when_gh_api_is_refused(
     monkeypatch, capsys
 ) -> None:
+    monkeypatch.setattr(
+        name,
+        "_run_gh",
+        lambda path: subprocess.CompletedProcess(
+            [], returncode=1, stdout="", stderr="HTTP 403: Forbidden"
+        ),
+    )
+    monkeypatch.setattr(name, "_fetch", lambda url: (404, b""))
+
+    result = name._check_github_user("ossemble", use_gh=True)
+
+    err = capsys.readouterr().err
+    assert result == "free"
+    assert "github_user check for 'ossemble': gh api refused" in err
+    assert "falling back to the public GitHub API" in err
+
+
+def test_check_github_user_fallback_failing_stays_an_error(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         name,
         "_run_gh",
@@ -412,6 +449,12 @@ def test_check_github_user_is_error_when_gh_api_fails_for_another_reason(
             [], returncode=1, stdout="", stderr="rate limited"
         ),
     )
+
+    def fetch(url):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(name, "_fetch", fetch)
+
     assert name._check_github_user("ossemble", use_gh=True) == "error"
     assert "github_user check failed" in capsys.readouterr().err
 
@@ -446,7 +489,28 @@ def test_check_github_repo_is_free_when_gh_api_finds_no_exact_name_match(monkeyp
     assert name._check_github_repo("ossemble", use_gh=True) == "free"
 
 
-def test_check_github_repo_is_error_when_gh_api_search_fails(monkeypatch, capsys) -> None:
+def test_check_github_repo_falls_back_and_is_honoured_when_gh_api_is_refused(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        name,
+        "_run_gh",
+        lambda path: subprocess.CompletedProcess(
+            [], returncode=1, stdout="", stderr="HTTP 403: Forbidden"
+        ),
+    )
+    payload = json.dumps({"items": [{"name": "ossemble-other"}]}).encode("utf-8")
+    monkeypatch.setattr(name, "_fetch", lambda url: (200, payload))
+
+    result = name._check_github_repo("ossemble", use_gh=True)
+
+    err = capsys.readouterr().err
+    assert result == "free"
+    assert "github_repo check for 'ossemble': gh api refused" in err
+    assert "falling back to the public GitHub API" in err
+
+
+def test_check_github_repo_fallback_failing_stays_an_error(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         name,
         "_run_gh",
@@ -454,8 +518,9 @@ def test_check_github_repo_is_error_when_gh_api_search_fails(monkeypatch, capsys
             [], returncode=1, stdout="", stderr="rate limited"
         ),
     )
+    monkeypatch.setattr(name, "_fetch", lambda url: (503, b""))
+
     assert name._check_github_repo("ossemble", use_gh=True) == "error"
-    assert "github_repo check failed" in capsys.readouterr().err
 
 
 def test_check_github_repo_falls_back_to_a_plain_request_when_gh_is_unavailable(
