@@ -1,16 +1,24 @@
-# 🧩 ossemble
+<h1 align="center">🧩 ossemble</h1>
 
-Assembles a finished open-source repo.
+<p align="center">
+  <b>Assembles a finished, trustworthy open source repo from a need or an existing one.</b>
+</p>
 
-<!-- hero image: still image, 1280 by 640, added at the social preview step -->
+<p align="center"><img alt="ossemble takes a need or an existing repo, runs secrets scanning, pinned actions, coverage gates and rule audits on it, and hands back a repo a stranger can trust" src="assets/readme/hero.svg" width="900"></p>
 
-<a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/license-MIT-2f6f4e"></a>
-<a href="pyproject.toml"><img alt="Python 3.11 or newer" src="https://img.shields.io/badge/python-3.11%2B-3776AB"></a>
-<a href="pyproject.toml"><img alt="zero runtime dependencies" src="https://img.shields.io/badge/dependencies-0-2f6f4e"></a>
+<p align="center">
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/license-MIT-2f6f4e?logo=opensourceinitiative&logoColor=white"></a>
+  <a href="pyproject.toml"><img alt="Python 3.11 or newer" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
+  <a href="pyproject.toml"><img alt="zero runtime dependencies" src="https://img.shields.io/badge/dependencies-0-2f6f4e"></a>
+</p>
 
-ossemble builds a repo from a need, when none exists yet, and it hardens or finishes an existing repo, when one already does. Add this repository as a skill with the skills CLI. See [CONTRIBUTING](CONTRIBUTING.md) for the workflow YAML and command reference.
+<p align="center">
+  <a href="https://github.com/anthropics/claude-code"><img alt="works with Claude Code" src="https://img.shields.io/badge/works%20with-Claude%20Code-1e1b4b?logo=claude&logoColor=white"></a>
+</p>
 
 ## Features
+
+ossemble takes a scope with nothing built yet, or a repo that already exists, and works it through the same gates either way.
 
 - 🚧 **Gates from day zero.** Secrets scanning, pinned actions and a coverage floor start at boot, not at the end.
 - 📋 **Rules as data.** Every rule carries a basis: a measured fact, an incident or a named source.
@@ -21,39 +29,25 @@ ossemble builds a repo from a need, when none exists yet, and it hardens or fini
 - 📣 **Listing for discovery.** Registers a finished repo on the channels that fit its shape.
 - 🛠️ **Your rules, your tools.** The rule set and the tool table are data you edit, not code you fork.
 
-## Badges
+## In action
 
-This section will hold ossemble's own audit result and coverage as live badges, once a run against this repo gives a real endpoint to read.
+[`tests/eval/consumers.py`](tests/eval/consumers.py) clones thirteen pinned public repos and checks the rows it prints against [`tests/eval/consumers.json`](tests/eval/consumers.json), the stored answer key, so a probe that starts or stops flagging something real shows up as a diff. Against [actions/checkout](https://github.com/actions/checkout), the audit finds ten real gaps, from an unpinned action reference to a Dependabot config with no weekly cooldown.
 
-<table width="100%">
-  <tr>
-    <th></th>
-    <th align="center">this repo</th>
-  </tr>
-  <tr>
-    <th align="left">Coverage</th>
-    <td align="center">pending</td>
-  </tr>
-  <tr>
-    <th align="left">Audit gaps</th>
-    <td align="center">pending</td>
-  </tr>
-</table>
+## Fit
 
-## Security
+Use it when:
 
-ossemble's own workflows use only the built-in `GITHUB_TOKEN` of the workflow they run in, read-only wherever GitHub allows it, and the skill itself uses no token unless the owner opts in.
+- Starting a new open source skill, agent, action or library and want tests, gates and an honest README from day one.
+- Hardening or finishing a Python repo that already exists, with an audit sorted by rule id.
+- Running several builders in parallel who must never edit the same file.
 
-ossemble never does any of the following without the owner's explicit go, where a go is possible at all:
+Look elsewhere when:
 
-- ❌ publishes a package
-- ❌ tags a release
-- ❌ installs an app
-- ❌ changes a repository setting
-- ❌ flips visibility
-- ❌ sends telemetry
-- ❌ stores a token
-- ❌ rewrites history
+- The target repo is not a Python project, since the boot and finish templates assume `pyproject.toml` and ruff.
+- The work needs to publish a package or tag a release on its own, since ossemble never does either without a go.
+- A stranger's trust in the finished repo does not matter to you.
+
+Add ossemble as a skill with the skills CLI. Its path is `oficiallyAkshay/ossemble`.
 
 ## How it compares
 
@@ -69,10 +63,17 @@ ossemble never does any of the following without the owner's explicit go, where 
 | Hardening review | ✅ | ✅ | ✅ | ❌ |
 | Auto-merge on open | ✅ | unknown | ❌ | ❌ |
 
-## Callouts
+## Security and limits
 
-- The coverage gate ramps: 70 while building, 100 at finish.
-- The owner is stopped once before boot, at this README, at each recommendation and at the flip to public.
-- A private repository is a legitimate outcome, and several recommendations hang on it.
-- ossemble never tags a version unless asked.
-- Needs Python 3.11 or newer, git, gh and uv on PATH; the script itself has no dependencies.
+The credential is `GITHUB_TOKEN`. It is each workflow's own built-in copy, read-only wherever GitHub allows it, and the skill itself uses no token unless the owner opts in.
+
+- ❌ publishes a package
+- ❌ tags a release
+- ❌ installs an app
+- ❌ changes a repository setting
+- ❌ flips visibility
+- ❌ sends telemetry
+- ❌ stores a token
+- ❌ rewrites history
+
+By default the coverage gate ramps, 70 while building, 100 at finish, and never drops. By default the owner signs off before boot, on each recommendation, and on the flip to public. It needs git, gh and uv on PATH, and Python 3.11 or newer, and the script itself depends on nothing beyond the standard library. A private repository gets every check, and staying private is a legitimate outcome several recommendations hang on.
