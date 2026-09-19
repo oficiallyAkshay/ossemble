@@ -11,6 +11,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: dependabot-auto-merge-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   auto-merge:
     if: github.event.pull_request.user.login == 'dependabot[bot]'

@@ -18,9 +18,16 @@ repos:
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
+      # The default files pattern only covers .github/workflows; the
+      # optional template sets ship their own copies of the same workflows
+      # under templates/<set>/.github/workflows, and those never got linted.
       - id: actionlint
+        files: ^(\.github/workflows/|templates/[^/]+/\.github/workflows/).*\.ya?ml$
 
   - repo: https://github.com/woodruffw/zizmor-pre-commit
     rev: v1.30.1
     hooks:
+      # Same reasoning as actionlint above: extend the default files
+      # pattern to also reach the template sets' workflow copies.
       - id: zizmor
+        files: (^|/)(\.github/(workflows/[^/]+|dependabot)\.ya?ml|action\.ya?ml|\.pre-commit-(config|hooks)\.ya?ml)$|templates/[^/]+/\.github/workflows/[^/]+\.ya?ml$
