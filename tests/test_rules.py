@@ -61,10 +61,14 @@ def test_the_rule_list_is_sorted_by_id() -> None:
 
 @pytest.mark.parametrize("rule", _load_rules(), ids=lambda rule: rule["id"])
 def test_every_rule_has_the_required_fields_with_the_right_types(rule: dict) -> None:
-    assert isinstance(rule["id"], str) and rule["id"]
-    assert isinstance(rule["text"], str) and rule["text"]
-    assert isinstance(rule["basis"], str) and rule["basis"]
-    assert isinstance(rule["category"], str) and rule["category"]
+    assert isinstance(rule["id"], str)
+    assert rule["id"]
+    assert isinstance(rule["text"], str)
+    assert rule["text"]
+    assert isinstance(rule["basis"], str)
+    assert rule["basis"]
+    assert isinstance(rule["category"], str)
+    assert rule["category"]
     assert rule["kind"] in ("default", "recommendation")
     assert rule["stage"] in ("build", "finish")
     assert rule["check"] in ("audit", "api", "judgment")
@@ -90,7 +94,8 @@ def test_a_rules_when_conditions_use_only_the_documented_keys(rule: dict) -> Non
     when = rule.get("when")
     if when is None:
         return
-    assert isinstance(when, dict) and when
+    assert isinstance(when, dict)
+    assert when
     assert set(when).issubset(ALLOWED_WHEN_KEYS)
 
 
@@ -101,6 +106,30 @@ EM_DASH = chr(0x2014)
 def test_no_rule_text_or_basis_contains_an_em_dash(rule: dict) -> None:
     assert EM_DASH not in rule["text"]
     assert EM_DASH not in rule["basis"]
+
+
+def _rule_by_id(rule_id: str) -> dict:
+    for rule in _load_rules():
+        if rule["id"] == rule_id:
+            return rule
+    raise AssertionError(f"no rule {rule_id!r} found")
+
+
+def test_str_003_states_it_covers_only_human_docs_not_references_or_agents() -> None:
+    rule = _rule_by_id("STR-003")
+    assert "README.md" in rule["text"]
+    assert "CONTRIBUTING.md" in rule["text"]
+    assert "references" in rule["basis"]
+    assert "agents" in rule["basis"]
+
+
+def test_str_004_states_it_counts_git_tracked_bytes_outside_tests_and_examples() -> None:
+    rule = _rule_by_id("STR-004")
+    assert "git-tracked" in rule["text"]
+    assert "tests/" in rule["text"]
+    assert "examples/" in rule["text"]
+    assert "test" in rule["basis"]
+    assert "example" in rule["basis"]
 
 
 def test_every_probe_named_by_a_rule_exists_as_a_function_in_audit_py() -> None:
@@ -139,3 +168,14 @@ def test_every_rule_id_cited_under_references_agents_or_skill_md_exists_in_rules
 
     missing = cited - known_ids
     assert not missing, f"cited rule ids that do not exist in rules.json: {sorted(missing)}"
+
+
+def test_every_manifest_rule_id_exists_in_rules_json() -> None:
+    known_ids = {rule["id"] for rule in _load_rules()}
+    manifest = json.loads((REPO_ROOT / "templates" / "manifest.json").read_text(encoding="utf-8"))
+    for entry in manifest:
+        missing = set(entry.get("rules", [])) - known_ids
+        assert not missing, (
+            f"{entry['src']!r} (set {entry['set']!r}) names rule ids missing from "
+            f"rules.json: {sorted(missing)}"
+        )

@@ -64,3 +64,12 @@ def test_an_unknown_subcommand_exits_with_status_two_and_names_the_invalid_choic
     assert exc_info.value.code == 2
     captured = capsys.readouterr()
     assert "invalid choice" in captured.err
+
+
+def test_main_dispatches_a_real_subcommand_and_returns_its_exit_code(tmp_path, capsys) -> None:
+    # This only proves dispatch reaches a subcommand's run() and returns its
+    # exit code, the interface main() owns; it never asserts what resume
+    # itself reports, which is resume's own behaviour to test.
+    exit_code = ossemble_main.main(["resume", str(tmp_path), "--json"])
+    capsys.readouterr()
+    assert exit_code in (0, 1)

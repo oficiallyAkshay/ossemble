@@ -5,7 +5,9 @@
     "set": "coderabbit",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "REV-004"
+    ]
   },
   {
     "src": "boot/.github/dependabot.yml",
@@ -13,7 +15,9 @@
     "set": "boot",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "HRD-008"
+    ]
   },
   {
     "src": "boot/.github/pull_request_template.md",
@@ -29,7 +33,11 @@
     "set": "ruleset",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "CI-001",
+      "CI-002",
+      "NO-004"
+    ]
   },
   {
     "src": "audit-deps/.github/workflows/audit.yml",
@@ -37,7 +45,16 @@
     "set": "audit-deps",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "CI-005",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "NO-003"
+    ]
   },
   {
     "src": "boot/.github/workflows/ci.yml",
@@ -45,7 +62,18 @@
     "set": "boot",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "CI-003",
+      "CI-004",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "HRD-007",
+      "NO-003"
+    ]
   },
   {
     "src": "finish/.github/workflows/ci.yml",
@@ -53,7 +81,20 @@
     "set": "finish",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "CI-003",
+      "CI-004",
+      "CI-006",
+      "CI-007",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "HRD-007",
+      "NO-003"
+    ]
   },
   {
     "src": "codeql/.github/workflows/codeql.yml",
@@ -61,7 +102,16 @@
     "set": "codeql",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "CI-009",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "NO-003"
+    ]
   },
   {
     "src": "dependabot-automerge/.github/workflows/dependabot-auto-merge.yml",
@@ -69,7 +119,16 @@
     "set": "dependabot-automerge",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "CI-010",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "NO-003"
+    ]
   },
   {
     "src": "scorecard/.github/workflows/scorecard.yml",
@@ -77,7 +136,16 @@
     "set": "scorecard",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "CI-008",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "NO-003"
+    ]
   },
   {
     "src": "boot/.gitignore",
@@ -85,7 +153,9 @@
     "set": "boot",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "NO-001"
+    ]
   },
   {
     "src": "boot/.pre-commit-config.yaml",
@@ -93,23 +163,40 @@
     "set": "boot",
     "when": null,
     "vars": [],
-    "rules": []
+    "rules": [
+      "HRD-007"
+    ]
   },
   {
     "src": "boot/pyproject.toml",
     "dest": "pyproject.toml",
     "set": "boot",
     "when": null,
-    "vars": ["NAME", "COVERAGE_FLOOR"],
-    "defaults": {"COVERAGE_FLOOR": "70"},
-    "rules": []
+    "vars": [
+      "NAME",
+      "COVERAGE_FLOOR"
+    ],
+    "defaults": {
+      "COVERAGE_FLOOR": "70"
+    },
+    "rules": [
+      "STR-001",
+      "STR-002",
+      "TST-001"
+    ]
   },
   {
     "src": "finish/pyproject.toml",
     "dest": "pyproject.toml",
     "set": "finish",
     "when": null,
-    "vars": ["NAME"],
-    "rules": []
+    "vars": [
+      "NAME"
+    ],
+    "rules": [
+      "HRD-009",
+      "STR-002",
+      "TST-002"
+    ]
   }
 ]

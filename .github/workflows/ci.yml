@@ -65,22 +65,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # A pull request only needs the version ubuntu-24.04's own python3
-  # resolves to; a push to main also runs the declared floor (3.11) and the
-  # newest release (3.14), so a version-specific failure is visible before
-  # it reaches anyone building on this skill.
+  # The declared floor (3.11), the version ubuntu-24.04's own python3
+  # resolves to (3.12), and the newest release (3.14) all run to completion,
+  # on every push and every pull request, so a version-specific failure is
+  # visible before it reaches anyone building on this skill.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
+      # Codecov uploads with an OIDC token rather than a repository secret.
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ github.event_name == 'pull_request' && fromJson('["3.12"]') || fromJson('["3.11", "3.12", "3.14"]') }}
+        python-version: ["3.11", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history for diff-cover's merge base.
+          fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
@@ -88,7 +92,26 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
       - run: uv sync
-      - run: uv run pytest --cov --cov-report=term-missing
+      - run: uv run pytest --cov --cov-report=xml --cov-report=term-missing
+
+      # One report per run, so only the newest leg uploads. The upload is
+      # tokenless: it authenticates with the job's OIDC identity, which
+      # Codecov accepts from a public repository. A Codecov outage must not
+      # block a merge, so the step reports and moves on.
+      - name: upload coverage
+        if: matrix.python-version == '3.14'
+        uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
+        with:
+          use_oidc: true
+          files: coverage.xml
+          fail_ci_if_error: false
+
+      # One run is enough: diff-cover's result does not vary by interpreter.
+      # origin/main is already local, fetched in full by the checkout step
+      # above, so no second fetch is needed here.
+      - name: diff coverage
+        if: matrix.python-version == '3.14' && github.event_name == 'pull_request'
+        run: uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=100
 
   # The one context the branch ruleset requires. It exists on every run and
   # is the only job name the ruleset needs to know.

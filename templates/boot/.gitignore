@@ -9,3 +9,4 @@ uv.lock
 coverage.xml
 *.local.md
 .DS_Store
+.ossemble/

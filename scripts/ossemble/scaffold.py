@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
 
 _TEMPLATES_ROOT = Path(__file__).resolve().parents[2] / "templates"
 _MANIFEST_PATH = _TEMPLATES_ROOT / "manifest.json"
@@ -14,7 +18,7 @@ class ScaffoldError(Exception):
     """A scaffold failure with a one-line message, printed and never raised past run()."""
 
 
-def add_parser(subparsers):
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the `scaffold` subcommand and wire it to `run`."""
     parser = subparsers.add_parser("scaffold", help="stamp a template set into a repo")
     parser.add_argument("path", nargs="?", default=".", help="target repo root")
@@ -150,7 +154,7 @@ def _stamp_one(
     return "drift"
 
 
-def _scaffold(args) -> int:
+def _scaffold(args: argparse.Namespace) -> int:
     """Do the actual work of run(), raising ScaffoldError on any failure."""
     manifest = _load_manifest()
     variables = _parse_variables(args.variables)
@@ -185,7 +189,7 @@ def _scaffold(args) -> int:
     return 0
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     """Stamp, or with --check report drift for, one template set."""
     try:
         return _scaffold(args)

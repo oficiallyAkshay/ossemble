@@ -26,6 +26,14 @@ pythonpath = ["."]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# A builder repo (like ossemble itself) keeps unrendered template files
+# under templates/ and a stamped fixture under examples/; neither is source
+# ruff should lint. This keeps a whole-tree `ruff check .` or `ruff format
+# .` from ever walking into either directory; templates/boot/ruff.toml
+# covers the other half, a file under templates/boot/ passed to ruff
+# directly, where ruff resolves config from that file's own directory
+# upward and this exclude is never consulted.
+extend-exclude = ["templates", "examples"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -34,6 +42,10 @@ ignore = [
     "ISC001", # conflicts with the ruff formatter
     "T20", # the CLI and scripts print their output and status by design
     "D401", # every docstring here names a value, not a command; a deliberate house style
+    "TRY003", # a failure is one formatted line on stderr, per the contract; the message is the exception's whole job, not a sign it needs its own subclass
+    "EM", # same: the custom errors here exist only to carry that one-line message, raw or an f-string
+    "PLC0415", # __main__ inserts sys.path before importing its siblings, and resume imports audit lazily so a broken audit module degrades one check, not every subcommand; both are documented where they happen
+    "CPY", # the LICENSE file at the repo root covers this; no per-file copyright header convention here
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -44,8 +56,14 @@ convention = "pep257"
     "S101", # assert is pytest's own idiom
     "ANN", # a test's signature does not need to be a documented interface
     "ARG001", # a pytest fixture is requested by name, not always used in the body
+    "ARG005", # a monkeypatched stub matches the real signature; it does not have to use every part of it
     "PLR2004", # comparing against a literal is the point of a test assertion
     "D103", # a test's name is its documentation
+    "D102", # same, for a test method on a test class
+    "D104", # the tests package needs no docstring of its own
+    "SLF001", # a test reaches into a private helper on purpose, to check it directly
+    "S603", # a fixture shells out to the real git or gh to set up a throwaway repo
+    "S607", # same: git and gh are fixed, trusted binary names here
 ]
 
 [tool.coverage.run]

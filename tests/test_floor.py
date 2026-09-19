@@ -8,7 +8,8 @@ from pathlib import Path
 from scripts.ossemble import floor
 
 COVERAGE_XML = """<?xml version="1.0" ?>
-<coverage line-rate="0.9" branch-rate="0.8" lines-covered="90" lines-valid="100" branches-covered="40" branches-valid="50">
+<coverage line-rate="0.9" branch-rate="0.8" lines-covered="90" lines-valid="100"
+          branches-covered="40" branches-valid="50">
 </coverage>
 """
 
@@ -47,10 +48,20 @@ def test_achieved_percent_returns_none_when_the_file_is_missing(tmp_path) -> Non
     assert floor._achieved_percent(tmp_path / "missing.xml") is None
 
 
+def test_achieved_percent_returns_none_for_a_non_numeric_attribute(tmp_path) -> None:
+    xml_path = write(
+        tmp_path / "coverage.xml",
+        '<coverage lines-covered="not-a-number" lines-valid="100"'
+        ' branches-covered="40" branches-valid="50"></coverage>',
+    )
+    assert floor._achieved_percent(xml_path) is None
+
+
 def test_achieved_percent_returns_none_when_no_lines_or_branches_are_valid(tmp_path) -> None:
     xml_path = write(
         tmp_path / "coverage.xml",
-        '<coverage line-rate="0" lines-covered="0" lines-valid="0" branches-covered="0" branches-valid="0"></coverage>',
+        '<coverage line-rate="0" lines-covered="0" lines-valid="0"'
+        ' branches-covered="0" branches-valid="0"></coverage>',
     )
     assert floor._achieved_percent(xml_path) is None
 
@@ -178,3 +189,21 @@ def test_run_returns_one_when_pyproject_toml_has_no_fail_under_line(tmp_path, ca
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "no fail_under line" in captured.err
+
+
+def test_run_returns_one_when_pyproject_toml_cannot_be_written(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    write(tmp_path / "pyproject.toml", "[tool.coverage.report]\nfail_under = 70\n")
+    xml_path = write(tmp_path / "coverage.xml", COVERAGE_XML)
+
+    def raise_os_error(self, data, encoding=None):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", raise_os_error)
+
+    exit_code = floor.run(argparse.Namespace(path=str(tmp_path), coverage_xml=str(xml_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "cannot write" in captured.err
