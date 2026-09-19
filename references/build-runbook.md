@@ -203,6 +203,8 @@ Who decides: script. A build spans sittings; nothing should redo checks unless s
 
 Run `python3 scripts/ossemble resume [path] --json`. It reads `.ossemble/state.json` for what cannot be derived (scope, shapes, opt-ins, prior art, owner gos, lowered gates, the findings ledger), runs `audit` itself for everything the repo already shows, and prints three things: the stage, any regression (a rule that passed at the commit and file hashes recorded in `state.checks` but fails now), and the next runbook step. Expensive model checks are keyed to a commit and a hash of the files they read; skip them again if both still match. When the state file and the repo disagree about anything derivable, the repo wins.
 
+The environment check inside `resume` includes the repo-local no-reply git identity: boot sets it once (step 2), and every later sitting must confirm it still holds before anything commits, because a cloud clone can carry a generic identity back in.
+
 ## 1 Define, then the parallel scouts
 
 Who decides: model, for the scope and shape; script, for the scout facts and the name screen.
@@ -243,7 +245,7 @@ Everything from step 1 collapses into one ask: confirm the scope, pick a prior-a
 
 Who decides: orchestrator alone, no subagents.
 
-Create the repo, set the repo-local no-reply git identity, write `references/contract.md` (the rules schema, template manifest and agent output shapes, fixed before any builder starts), write `.ossemble/state.json` (gitignored) with the scope, shape, opt-ins and prior-art outcome from the one question, and stamp the boot template set:
+Create the repo, set the repo-local no-reply git identity (before any commit, including the orchestrator's own), write `references/contract.md` (the rules schema, template manifest and agent output shapes, fixed before any builder starts), write `.ossemble/state.json` (gitignored) with the scope, shape, opt-ins and prior-art outcome from the one question, and stamp the boot template set:
 
 ```
 python3 scripts/ossemble scaffold --set boot --var NAME=<name> --var OWNER=<owner>
@@ -252,6 +254,8 @@ python3 scripts/ossemble scaffold --set boot --var NAME=<name> --var OWNER=<owne
 Write the ruleset as committed JSON and diff it against the live one with `gh api repos/{owner}/{repo}/rulesets`. Attempt the write through the API once; if a permission classifier blocks it (see `references/hosts.md`), do it in the browser instead and verify the result by reading the ruleset back, never by trusting the click. Turn on auto-merge and delete-branch-on-merge with `gh repo edit {owner}/{repo} --enable-auto-merge --enable-rebase-merge --delete-branch-on-merge`; squash and merge commits stay off.
 
 Once boot lands, the build-stage gates are on: identity, secrets scan, hash pins, empty top-level permissions, the ruleset with its required `ci` check, and the formatter.
+
+The dispatcher test the orchestrator owns (`tests/test_main.py`, shared) asserts only the interface: every subcommand registers, `--help` works, exit codes are right. It never asserts a subcommand's behaviour. A behaviour assertion here fails every builder's first real implementation at once, because each stub started out passing it; a builder replacing a stub is expected to satisfy this test unchanged, not fight it.
 
 ## 3 Map
 
@@ -280,7 +284,9 @@ gh pr merge --auto --rebase
 
 Auto-merge is armed the moment the PR opens. CI is the verification; there is no separate verifier pass at this step unless the owner asked to read one first, which they do for README rewrites at step 9.
 
-After the wave: CI decides each PR, worktrees for merged branches are tidied (`git worktree remove`, delete the local branch), main is checked green, and the coverage floor is raised to the number actually achieved with `python3 scripts/ossemble floor --coverage-xml coverage.xml`. Parallel PRs that touch the same file rebase; the brief for the later one says so. A PR whose base merged under it gets `--base main` by message, not a relaunch. A dropped builder is relaunched with an instruction to check the leftovers first: list worktrees, look for an existing branch and PR, continue rather than duplicate; this is the recoverer role in `references/agents.md`.
+When GitHub GraphQL is unavailable for the session (`references/hosts.md` has the REST replacements), `gh pr create` and `gh pr merge --auto` fail: the orchestrator opens the PR and arms auto-merge by REST instead, and the builder pushes and writes the PR body to a file rather than opening the PR itself. A builder also cannot watch CI itself in that state; the orchestrator reads CI by REST and relays a failure to the builder by message. The builder amends the fix, rebases if the message asks for it, and force-pushes with `--force-with-lease`.
+
+After the wave: CI decides each PR, worktrees for merged branches are tidied (`git worktree remove`, delete the local branch), main is checked green, and the coverage floor is raised to the number actually achieved with `python3 scripts/ossemble floor --coverage-xml coverage.xml`. Parallel PRs that touch the same file rebase; the brief for the later one says so. A PR whose base merged under it gets `--base main` by message, not a relaunch. A dropped builder is relaunched with the recoverer role in `references/agents.md`, instructed to check the leftovers first: `git status --short` in the worktree, an existing branch, an existing PR; continue rather than duplicate. A container restart kills every background builder, but worktrees and pushed branches survive it, which is why this check comes before any relaunch.
 
 ## 5 Lean, prove, cut
 
@@ -368,7 +374,7 @@ Flip visibility if the repo was private, then switch on whichever public-only op
 
 Who decides: script does the mechanical part, the owner's one go covers the whole batch, by shape.
 
-ossemble registers the repo itself rather than only handing over a list. Always: GitHub topics (`gh repo edit {owner}/{repo} --add-topic <topic>`) and a pull request to a live awesome list if a scout has verified one fits. By shape: a `.claude-plugin/marketplace.json` file for a Claude Code plugin marketplace, GitHub Marketplace for an action, an MCP registry entry for an MCP server, Context7 for anything with docs. skills.sh auto-indexes and ranks by installs on its own; nothing to submit for a skill. Do not list on a channel a scout has not verified as real, free and used; unverified candidates wait. What only the owner can do (a Marketplace developer agreement, a passkey) goes onto the step 14 checklist, not into this step.
+ossemble registers the repo itself rather than only handing over a list. Always: GitHub topics and a pull request to a live awesome list if a scout has verified one fits. By shape: a plugin marketplace file for a Claude Code plugin marketplace, GitHub Marketplace for an action, an MCP registry entry for an MCP server, Context7 for anything with docs; skills.sh needs nothing submitted. `references/hosts.md` has the exact mechanics and verification status for every channel above; do not list on one it still marks `not verified`. What only the owner can do (a Marketplace developer agreement, a passkey) goes onto the step 14 checklist, not into this step.
 
 ## 14 Stop
 
