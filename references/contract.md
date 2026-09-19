@@ -14,6 +14,7 @@ One owner per path. Disjoint owners build in parallel.
 | `references/build-runbook.md`, `references/modify-runbook.md`, `references/agents.md`, `references/tools.md`, `references/hosts.md`, `agents/` | runbooks, roster, role prompts, tool table, host notes | builder C |
 | `SKILL.md`, `scripts/ossemble/name.py`, `scripts/ossemble/resume.py`, `tests/test_name.py`, `tests/test_resume.py` | the skill entry, the name screen, resume | builder D |
 | `README.md`, `CONTRIBUTING.md` | human docs, written at docs time | docs builder |
+| `tests/eval/`, `tests/test_consumers.py`, `.github/workflows/consumers.yml` | the consumers eval: pinned public repos and their expected gap rows | eval builder |
 
 A test the orchestrator owns asserts only the interface: that a subcommand is registered, answers `--help` under its own name and exits with the documented codes. It never asserts what a stub does, because the first real implementation replaces the stub and must not fail a shared test. (Found on the first self-build: three builders failed CI at once on one such assertion.)
 
