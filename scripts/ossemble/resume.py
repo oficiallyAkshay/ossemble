@@ -52,6 +52,9 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
 def run(args: argparse.Namespace) -> int:
     """Print the environment, stage, regressions, lowered gates and next step."""
     path = Path(args.path)
+    if path.is_symlink():
+        print("ossemble resume: refusing to follow a symlink as the target path", file=sys.stderr)
+        return 1
 
     environment = _check_environment(path)
     stage, coverage_floor = _read_stage(path)
