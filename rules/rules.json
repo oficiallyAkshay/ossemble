@@ -115,6 +115,18 @@
     "check": "judgment"
   },
   {
+    "id": "CI-011",
+    "text": "Recommend actions/dependency-review-action on pull requests for a public repo with any declared dependency, dev groups included; it authenticates with GITHUB_TOKEN only, with no stored secret, and it complements the weekly pip-audit at pull request time.",
+    "basis": "battle test 2026-09-19, ossf/scorecard-action, step-security/harden-runner",
+    "category": "gates and CI",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment",
+    "when": {
+      "public": true
+    }
+  },
+  {
     "id": "DOC-001",
     "text": "Never put a CI status badge, a code block, or a link to a workflow file before the README's first heading.",
     "basis": "what the 2026-09-18 prompt changes: rules it overrides, README row; things the owner has said no to",
@@ -175,6 +187,15 @@
     "id": "DOC-007",
     "text": "Recommend a still hero image and a social preview for a repo meant to be found; skip the animation unless the owner asks for motion.",
     "basis": "prompt section 2, hero animation, social preview, README polish",
+    "category": "readme and brand",
+    "kind": "recommendation",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "DOC-008",
+    "text": "Recommend one AGENTS.md as the single agent-instructions file for any repo agents will work on, with CLAUDE.md kept to a one-line pointer to it and never a symlink; skip this for a single-file skill.",
+    "basis": "battle test 2026-09-19, vercel-labs/agent-skills",
     "category": "readme and brand",
     "kind": "recommendation",
     "stage": "finish",
@@ -622,6 +643,15 @@
     "check": "judgment"
   },
   {
+    "id": "PRC-016",
+    "text": "When the formatter first runs repo-wide, record that commit's hash in .git-blame-ignore-revs.",
+    "basis": "battle test 2026-09-19, zizmorcore/zizmor",
+    "category": "process",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment"
+  },
+  {
     "id": "PRV-001",
     "text": "Commit under the repo's no-reply identity, never a personal name or email.",
     "basis": "hard rules; prompt section 3",
@@ -979,5 +1009,17 @@
     "kind": "default",
     "stage": "finish",
     "check": "judgment"
+  },
+  {
+    "id": "TST-008",
+    "text": "Run ty in pre-commit at the finish stage for a Python repo.",
+    "basis": "battle test 2026-09-19, pypa/pipx",
+    "category": "tests and failure",
+    "kind": "default",
+    "stage": "finish",
+    "check": "judgment",
+    "when": {
+      "language": "python"
+    }
   }
 ]
