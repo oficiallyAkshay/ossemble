@@ -24,19 +24,27 @@ def _without_the_package_directory_on_sys_path():
 
 
 @pytest.mark.parametrize("subcommand", SUBCOMMANDS)
-def test_each_subcommand_dispatches_to_its_own_stub_and_returns_one(subcommand, capsys) -> None:
-    exit_code = ossemble_main.main([subcommand])
+def test_each_subcommand_is_registered_and_answers_help_under_its_own_name(
+    subcommand, capsys
+) -> None:
+    # The dispatcher's job ends at registration: each module owns what its
+    # subcommand does, so this only proves the subcommand exists and that
+    # argparse routes to it. Help exits 0 before any run() is called.
+    with pytest.raises(SystemExit) as exc_info:
+        ossemble_main.main([subcommand, "--help"])
+    assert exc_info.value.code == 0
     captured = capsys.readouterr()
-    assert exit_code == 1
-    assert captured.err == f"ossemble {subcommand}: not built yet\n"
-    assert captured.out == ""
+    assert captured.out.startswith(f"usage: ossemble {subcommand}")
+    assert captured.err == ""
 
 
 def test_calling_main_twice_adds_the_package_directory_to_sys_path_only_once() -> None:
     assert PACKAGE_DIR not in sys.path
-    ossemble_main.main(["audit"])
+    with pytest.raises(SystemExit):
+        ossemble_main.main(["audit", "--help"])
     assert sys.path.count(PACKAGE_DIR) == 1
-    ossemble_main.main(["audit"])
+    with pytest.raises(SystemExit):
+        ossemble_main.main(["audit", "--help"])
     assert sys.path.count(PACKAGE_DIR) == 1
 
 
