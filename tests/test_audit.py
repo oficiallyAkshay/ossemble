@@ -152,6 +152,108 @@ def test_run_returns_one_and_names_the_rule_when_a_probe_is_unknown(
     assert "nonexistent_probe" in captured.err
 
 
+def test_run_returns_one_and_names_the_rule_when_a_required_field_is_missing(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule(kind=None)])
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "STR-001" in captured.err
+    assert "kind" in captured.err
+
+
+def test_run_names_a_rule_by_its_position_when_even_its_id_is_missing(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    broken = _rule()
+    del broken["id"]
+    stub_rules(monkeypatch, tmp_path, [broken])
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "#0" in captured.err
+    assert "'id'" in captured.err
+
+
+def test_run_returns_one_when_a_rules_text_field_is_an_empty_string(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule(text="")])
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "'text'" in captured.err
+
+
+def test_run_returns_one_when_a_rules_stage_is_not_build_or_finish(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule(stage="someday")])
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "'stage'" in captured.err
+
+
+def test_run_returns_one_when_a_rules_check_is_not_a_known_value(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    stub_rules(monkeypatch, tmp_path, [_rule(check="vibes")])
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "'check'" in captured.err
+
+
+def test_run_returns_one_when_an_audit_rule_names_no_probe(tmp_path, capsys, monkeypatch) -> None:
+    broken = _rule()
+    del broken["probe"]
+    stub_rules(monkeypatch, tmp_path, [broken])
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "'probe'" in captured.err
+
+
+def test_run_scores_a_judgment_rule_with_no_probe_without_a_traceback(
+    tmp_path, monkeypatch
+) -> None:
+    """A `check: judgment` rule needs no probe and never reaches the probe check."""
+    stub_rules(
+        monkeypatch,
+        tmp_path,
+        [
+            {
+                "id": "REV-001",
+                "text": "a human reviews this",
+                "basis": "test",
+                "category": "review",
+                "kind": "recommendation",
+                "stage": "build",
+                "check": "judgment",
+            }
+        ],
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    assert exit_code == 0
+
+
 def test_run_turns_a_probes_os_error_into_a_gap_row_instead_of_a_traceback(
     tmp_path, capsys, monkeypatch
 ) -> None:
@@ -466,6 +568,18 @@ def test_run_git_returns_none_when_git_itself_cannot_run(tmp_path, monkeypatch) 
     assert audit._run_git(tmp_path, "status") is None
 
 
+def test_git_run_git_is_the_one_wrapper_audit_and_resume_both_share(tmp_path) -> None:
+    """`audit._run_git` is `_git.run_git` itself, the one place this is tested."""
+    init_git_repo(tmp_path)
+
+    assert audit._run_git is audit._git.run_git
+    result = audit._git.run_git(tmp_path, "rev-parse", "--is-inside-work-tree")
+
+    assert result is not None
+    assert result.returncode == 0
+    assert result.stdout.strip() == "true"
+
+
 def test_steps_splits_multiple_list_items_by_dedent() -> None:
     text = "- one\n  detail one\n- two\n  detail two\n- three\n"
 
@@ -644,6 +758,108 @@ def test_gather_facts_tolerates_a_failing_gh_api_call(tmp_path, monkeypatch) -> 
 
     assert result["repo_settings"] is None
     assert result["ruleset"] is None
+
+
+def test_gather_facts_reads_each_workflow_file_pyproject_and_tracked_files_exactly_once(
+    tmp_path, monkeypatch
+) -> None:
+    workflow(tmp_path, "on:\n  push:\njobs:\n  build:\n    steps: []\n")
+    workflow(tmp_path, "on:\n  push:\njobs:\n  build:\n    steps: []\n", name="other.yml")
+    write(tmp_path, "pyproject.toml", "[project]\ndependencies = []\n")
+    init_git_repo(tmp_path)
+
+    read_calls: list[Path] = []
+    original_read_text = audit._read_text
+
+    def counting_read_text(path: Path) -> str | None:
+        read_calls.append(path)
+        return original_read_text(path)
+
+    monkeypatch.setattr(audit, "_read_text", counting_read_text)
+
+    load_toml_calls: list[Path] = []
+    original_load_toml = audit._load_toml
+
+    def counting_load_toml(path: Path) -> dict | None:
+        load_toml_calls.append(path)
+        return original_load_toml(path)
+
+    monkeypatch.setattr(audit, "_load_toml", counting_load_toml)
+
+    tracked_files_calls: list[Path] = []
+    original_tracked_files = audit._tracked_files
+
+    def counting_tracked_files(root: Path) -> set[str] | None:
+        tracked_files_calls.append(root)
+        return original_tracked_files(root)
+
+    monkeypatch.setattr(audit, "_tracked_files", counting_tracked_files)
+
+    facts = audit._gather_facts(tmp_path, use_api=False)
+
+    workflow_reads = [path for path in read_calls if path.parent.name == "workflows"]
+    assert sorted(workflow_reads) == sorted(path for path, _text in facts["workflow_items"])
+    assert len(workflow_reads) == 2
+    assert load_toml_calls == [tmp_path / "pyproject.toml"]
+    assert tracked_files_calls == [tmp_path]
+
+
+def test_run_reads_each_workflow_file_and_parses_pyproject_exactly_once_per_run(
+    tmp_path, monkeypatch
+) -> None:
+    """Several probes need workflow text or pyproject; each reads its input once, not once each."""
+    workflow(
+        tmp_path,
+        "permissions: {}\n"
+        "on:\n  push:\njobs:\n  build:\n    permissions: {}\n"
+        "    timeout-minutes: 5\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@"
+        + "a" * 40
+        + " # v4\n"
+        + "        with:\n          persist-credentials: false\n",
+    )
+    write(tmp_path, "pyproject.toml", "[project]\ndependencies = []\n")
+    init_git_repo(tmp_path)
+
+    read_calls: list[Path] = []
+    original_read_text = audit._read_text
+
+    def counting_read_text(path: Path) -> str | None:
+        read_calls.append(path)
+        return original_read_text(path)
+
+    monkeypatch.setattr(audit, "_read_text", counting_read_text)
+
+    load_toml_calls: list[Path] = []
+    original_load_toml = audit._load_toml
+
+    def counting_load_toml(path: Path) -> dict | None:
+        load_toml_calls.append(path)
+        return original_load_toml(path)
+
+    monkeypatch.setattr(audit, "_load_toml", counting_load_toml)
+
+    stub_rules(
+        monkeypatch,
+        tmp_path,
+        [
+            _rule(id="CI-001", probe="workflow_top_level_permissions_empty"),
+            _rule(id="CI-002", probe="job_level_permissions_declared"),
+            _rule(id="CI-003", probe="job_timeout_minutes_set"),
+            _rule(id="CI-004", probe="checkout_persist_credentials_false"),
+            _rule(id="CI-005", probe="actions_pinned_to_full_sha_with_version_comment"),
+            _rule(id="CI-006", probe="concurrency_keyed_by_ref_on_pr_and_sha_on_push"),
+            _rule(id="STR-005", probe="stdlib_only_runtime_dependencies"),
+            _rule(id="STR-006", probe="coverage_floor_at_least_seventy"),
+        ],
+    )
+
+    audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=False))
+
+    workflow_reads = [path for path in read_calls if path.parent.name == "workflows"]
+    assert len(workflow_reads) == 1
+    assert load_toml_calls == [tmp_path / "pyproject.toml"]
 
 
 # ------------------------------------------------------------------- probes

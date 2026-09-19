@@ -20,7 +20,7 @@ def _fake_git_config(monkeypatch, email: str, returncode: int = 0) -> None:
         assert cmd[:2] == ["git", "-C"]
         return subprocess.CompletedProcess(cmd, returncode=returncode, stdout=email, stderr="")
 
-    monkeypatch.setattr(resume.subprocess, "run", fake_run)
+    monkeypatch.setattr(resume._git.subprocess, "run", fake_run)
 
 
 def _write_pyproject(tmp_path, fail_under) -> None:
@@ -103,7 +103,7 @@ def test_check_environment_never_checks_identity_when_git_itself_is_missing(
     def fail(*_args, **_kwargs):
         raise AssertionError("git config should not run when git is missing")
 
-    monkeypatch.setattr(resume.subprocess, "run", fail)
+    monkeypatch.setattr(resume._git.subprocess, "run", fail)
 
     environment = resume._check_environment(tmp_path)
 
@@ -129,7 +129,7 @@ def test_has_noreply_identity_is_false_when_running_git_raises(monkeypatch, tmp_
     def fake_run(*_args, **_kwargs):
         raise OSError("git not found")
 
-    monkeypatch.setattr(resume.subprocess, "run", fake_run)
+    monkeypatch.setattr(resume._git.subprocess, "run", fake_run)
     assert resume._has_noreply_identity(tmp_path) is False
 
 
@@ -337,7 +337,7 @@ def test_head_commit_is_none_when_git_cannot_run(monkeypatch, tmp_path) -> None:
     def fail(*_args, **_kwargs):
         raise OSError("git not found")
 
-    monkeypatch.setattr(resume.subprocess, "run", fail)
+    monkeypatch.setattr(resume._git.subprocess, "run", fail)
     assert resume._head_commit(tmp_path) is None
 
 

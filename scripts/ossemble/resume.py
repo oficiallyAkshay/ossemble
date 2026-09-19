@@ -20,7 +20,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -29,6 +28,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import argparse
     from types import ModuleType
+
+try:
+    from . import _git
+except ImportError:
+    import _git
 
 _TOOLS = ("git", "gh", "uv")
 _NOREPLY_SUFFIX = "@users.noreply.github.com"
@@ -97,17 +101,8 @@ def _check_environment(path: Path) -> dict:
 
 def _has_noreply_identity(path: Path) -> bool:
     """Check that the repo-local git identity is a no-reply GitHub address."""
-    try:
-        result = subprocess.run(  # noqa: S603 -- fixed argv, never a shell
-            ["git", "-C", str(path), "config", "user.email"],  # noqa: S607 -- git is trusted
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except OSError:
-        return False
-    if result.returncode != 0:
+    result = _git.run_git(path, "config", "user.email")
+    if result is None or result.returncode != 0:
         return False
     return result.stdout.strip().endswith(_NOREPLY_SUFFIX)
 
@@ -185,17 +180,8 @@ def _audit_check(path: Path, state: dict) -> tuple[str, int, dict | None]:
 
 def _head_commit(path: Path) -> str | None:
     """The repo's current commit sha, or None when it has no commits yet."""
-    try:
-        result = subprocess.run(  # noqa: S603 -- fixed argv, never a shell
-            ["git", "-C", str(path), "rev-parse", "HEAD"],  # noqa: S607 -- git is trusted
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
+    result = _git.run_git(path, "rev-parse", "HEAD")
+    if result is None or result.returncode != 0:
         return None
     return result.stdout.strip()
 
