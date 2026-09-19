@@ -68,6 +68,7 @@
     "commit": "2c82a8779a68d2babb1e5e856d2ae69253dcd611",
     "rows": [
       "CI-003  .github/workflows/codeql.yml",
+      "DOC-002  README.md",
       "HRD-001  .github/workflows/ci.yml",
       "HRD-002  .github/workflows/clonometer.yml",
       "NO-003  .github/workflows/clonometer.yml",
