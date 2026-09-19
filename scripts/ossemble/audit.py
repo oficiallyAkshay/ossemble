@@ -19,10 +19,18 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     import argparse
+    from collections.abc import Callable
+
+try:
+    from . import _git
+except ImportError:
+    import _git
+
+_CacheT = TypeVar("_CacheT")
 
 ALLOWED_STATE_KEYS = {
     "scope",
@@ -73,8 +81,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     return parser
 
 
-class _UnknownProbeError(RuntimeError):
-    """A rule names a probe that does not exist in this module."""
+class _RuleError(RuntimeError):
+    """A rule fails validation: a missing or wrong-typed field, or an unknown probe."""
 
 
 def rules_path() -> Path:
@@ -98,14 +106,49 @@ def _load_rules() -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+_RULE_KIND_VALUES = ("default", "recommendation")
+_RULE_STAGE_VALUES = ("build", "finish")
+_RULE_CHECK_VALUES = ("audit", "api", "judgment")
+_RULE_REQUIRED_TEXT_FIELDS = ("id", "text", "basis", "category")
+
+
+def _validate_rules(rules: list[dict]) -> None:
+    """Confirm every rule has its required fields, correctly typed, before any is scored.
+
+    Per the contract: id, text, basis and category are non-empty strings;
+    kind is `default` or `recommendation`; stage is `build` or `finish`;
+    check is `audit`, `api` or `judgment`; and a rule whose check is
+    `audit` or `api` names a probe. Raises `_RuleError` naming the rule,
+    by id when it has one, else by its position in the list.
+    """
+    for index, rule in enumerate(rules):
+        rule_id = rule.get("id")
+        label = rule_id if isinstance(rule_id, str) and rule_id else f"#{index}"
+        for field in _RULE_REQUIRED_TEXT_FIELDS:
+            value = rule.get(field)
+            if not isinstance(value, str) or not value:
+                raise _RuleError(f"rule {label} has a missing or invalid {field!r} field")
+        if rule.get("kind") not in _RULE_KIND_VALUES:
+            raise _RuleError(f"rule {label} has a missing or invalid 'kind' field")
+        if rule.get("stage") not in _RULE_STAGE_VALUES:
+            raise _RuleError(f"rule {label} has a missing or invalid 'stage' field")
+        if rule.get("check") not in _RULE_CHECK_VALUES:
+            raise _RuleError(f"rule {label} has a missing or invalid 'check' field")
+        if rule.get("check") in ("audit", "api"):
+            probe_name = rule.get("probe")
+            if not isinstance(probe_name, str) or not probe_name:
+                raise _RuleError(f"rule {label} has a missing or invalid 'probe' field")
+
+
 def _score(
     root: Path, facts: dict, rules: list[dict], *, use_api: bool
 ) -> tuple[list[dict], list[dict]]:
     """Evaluate `rules` against `root`/`facts`, returning (gaps, recommendations).
 
-    Raises `_UnknownProbeError` when a rule names a probe this module does
-    not define.
+    Raises `_RuleError` when a rule fails validation or names a probe this
+    module does not define.
     """
+    _validate_rules(rules)
     gaps: list[dict[str, str]] = []
     recommendations: list[dict[str, str]] = []
     for rule in rules:
@@ -122,7 +165,7 @@ def _score(
         probe_name = rule.get("probe")
         probe = PROBES.get(probe_name)
         if probe is None:
-            raise _UnknownProbeError(f"rule {rule.get('id')} names an unknown probe {probe_name!r}")
+            raise _RuleError(f"rule {rule.get('id')} names an unknown probe {probe_name!r}")
 
         try:
             result = probe(root, facts)
@@ -186,7 +229,7 @@ def run(args: argparse.Namespace) -> int:
     facts = _gather_facts(root, use_api=args.api)
     try:
         gap_rows, recommendation_rows = _score(root, facts, rules, use_api=args.api)
-    except _UnknownProbeError as exc:
+    except _RuleError as exc:
         print(f"ossemble audit: {exc}", file=sys.stderr)
         return 1
 
@@ -209,14 +252,19 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _gather_facts(root: Path, *, use_api: bool) -> dict:
+    workflow_items = _workflow_item_list(root)
+    pyproject = _load_toml(root / "pyproject.toml")
     facts: dict = {
-        "has_workflows": _has_workflows(root),
+        "has_workflows": bool(workflow_items),
         "language": "python" if (root / "pyproject.toml").is_file() else None,
         "shape": None,
         "public": None,
-        "stage": _stage(root),
+        "stage": _stage_from_config(pyproject),
         "repo_settings": None,
         "ruleset": None,
+        "workflow_items": workflow_items,
+        "pyproject": pyproject,
+        "tracked_files": _tracked_files(root),
     }
     if use_api:
         owner_repo = _remote_owner_repo(root)
@@ -256,8 +304,29 @@ def _workflow_files(root: Path) -> list[Path]:
     return files
 
 
+def _workflow_item_list(root: Path) -> list[tuple[Path, str]]:
+    """Read every workflow file's text exactly once, in `_workflow_files` order."""
+    return [(path, _read_text(path) or "") for path in _workflow_files(root)]
+
+
+def _cached(facts: dict, key: str, compute: Callable[[], _CacheT]) -> _CacheT:
+    """Return `facts[key]` when `_gather_facts` already put it there, else compute it now.
+
+    Lets a probe run standalone, against a hand-built `facts` dict that
+    has no such key, exactly as it did before `_gather_facts` started
+    caching; `run` and `gaps` pay the read or parse behind `compute` only
+    once per audit, since their `facts` already carries the key.
+    """
+    if key in facts:
+        return facts[key]
+    return compute()
+
+
 def _stage(root: Path) -> str:
-    config = _load_toml(root / "pyproject.toml")
+    return _stage_from_config(_load_toml(root / "pyproject.toml"))
+
+
+def _stage_from_config(config: dict | None) -> str:
     if config is None:
         return "build"
     fail_under = config.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under")
@@ -294,18 +363,10 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
-def _run_git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
-    """Run `git -C root <args>`, or None when git itself could not be run."""
-    try:
-        return subprocess.run(  # noqa: S603 -- fixed argv, never a shell
-            ["git", "-C", str(root), *args],  # noqa: S607 -- git is a trusted binary name
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except OSError:
-        return None
+# `resume` runs the same git subcommands and shares this wrapper; kept here
+# since audit is the module every other subcommand may lazily import, the
+# way resume already does for `gaps`.
+_run_git = _git.run_git
 
 
 def _steps(text: str) -> list[str]:
@@ -387,9 +448,9 @@ def _remote_owner_repo(root: Path) -> str | None:
 # (file, message) pair naming the gap.
 
 
-def stdlib_only_runtime_dependencies(root: Path, _facts: dict) -> ProbeResult:
+def stdlib_only_runtime_dependencies(root: Path, facts: dict) -> ProbeResult:
     """Depend on nothing beyond the standard library at runtime."""
-    config = _load_toml(root / "pyproject.toml")
+    config = _cached(facts, "pyproject", lambda: _load_toml(root / "pyproject.toml"))
     if config is None:
         return ("pyproject.toml", "cannot read pyproject.toml")
     deps = config.get("project", {}).get("dependencies", [])
@@ -398,9 +459,9 @@ def stdlib_only_runtime_dependencies(root: Path, _facts: dict) -> ProbeResult:
     return None
 
 
-def dev_tooling_in_dependency_group(root: Path, _facts: dict) -> ProbeResult:
+def dev_tooling_in_dependency_group(root: Path, facts: dict) -> ProbeResult:
     """Confirm dev tooling lives in a dependency group with no build backend."""
-    config = _load_toml(root / "pyproject.toml")
+    config = _cached(facts, "pyproject", lambda: _load_toml(root / "pyproject.toml"))
     if config is None:
         return ("pyproject.toml", "cannot read pyproject.toml")
     dev_group = config.get("dependency-groups", {}).get("dev")
@@ -426,10 +487,10 @@ def docs_under_300_lines(root: Path, _facts: dict) -> ProbeResult:
 _LEANNESS_EXCLUDED_DIRS = ("tests", "examples")
 
 
-def repo_under_250kb(root: Path, _facts: dict) -> ProbeResult:
+def repo_under_250kb(root: Path, facts: dict) -> ProbeResult:
     """Keep the repo under 250 KB, counting git-tracked bytes outside tests/ and examples/."""
     limit = 250_000
-    tracked = _tracked_files(root)
+    tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
     total = _tracked_bytes(root, tracked) if tracked is not None else _walked_bytes(root)
     if total > limit:
         return (".", f"tracked tree is {total} bytes, over the {limit}-byte limit")
@@ -460,10 +521,9 @@ def _walked_bytes(root: Path) -> int:
     return total
 
 
-def leanness_tool_never_wired_into_ci(root: Path, _facts: dict) -> ProbeResult:
+def leanness_tool_never_wired_into_ci(root: Path, facts: dict) -> ProbeResult:
     """Confirm no workflow references ponytail; it stays dev-only, report-only."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         if "ponytail" in text.lower():
             return (
                 str(path.relative_to(root)),
@@ -472,39 +532,35 @@ def leanness_tool_never_wired_into_ci(root: Path, _facts: dict) -> ProbeResult:
     return None
 
 
-def workflow_top_level_permissions_empty(root: Path, _facts: dict) -> ProbeResult:
+def workflow_top_level_permissions_empty(root: Path, facts: dict) -> ProbeResult:
     """Set `permissions: {}` at the top of every workflow."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         if not re.search(r"^permissions:\s*\{\}\s*$", text, re.MULTILINE):
             return (str(path.relative_to(root)), "no top-level `permissions: {}`")
     return None
 
 
-def job_level_permissions_declared(root: Path, _facts: dict) -> ProbeResult:
+def job_level_permissions_declared(root: Path, facts: dict) -> ProbeResult:
     """Grant each job only the permissions it needs, declared on the job itself."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for name, body in _jobs(text).items():
             if not re.search(r"^\s+permissions:", body, re.MULTILINE):
                 return (str(path.relative_to(root)), f"job {name!r} has no permissions of its own")
     return None
 
 
-def job_timeout_minutes_set(root: Path, _facts: dict) -> ProbeResult:
+def job_timeout_minutes_set(root: Path, facts: dict) -> ProbeResult:
     """Set `timeout-minutes` on every job."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for name, body in _jobs(text).items():
             if "timeout-minutes:" not in body:
                 return (str(path.relative_to(root)), f"job {name!r} has no timeout-minutes")
     return None
 
 
-def checkout_persist_credentials_false(root: Path, _facts: dict) -> ProbeResult:
+def checkout_persist_credentials_false(root: Path, facts: dict) -> ProbeResult:
     """Set `persist-credentials: false` on every checkout step."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for step in _steps(text):
             if "actions/checkout@" in step and "persist-credentials: false" not in step:
                 return (
@@ -517,7 +573,7 @@ def checkout_persist_credentials_false(root: Path, _facts: dict) -> ProbeResult:
 ZIZMOR_UNPINNED_IGNORE = re.compile(r"zizmor:\s*ignore\[unpinned-uses\]\s*(\S.*)?")
 
 
-def actions_pinned_to_full_sha_with_version_comment(root: Path, _facts: dict) -> ProbeResult:
+def actions_pinned_to_full_sha_with_version_comment(root: Path, facts: dict) -> ProbeResult:
     """Confirm every `uses:` is pinned to a full commit SHA with a version comment.
 
     A deliberate unpinned self-reference passes when the same line carries
@@ -525,8 +581,7 @@ def actions_pinned_to_full_sha_with_version_comment(root: Path, _facts: dict) ->
     reason; an ignore with no reason still fails.
     """
     pin_pattern = re.compile(r"uses:\s*([^\s#]+)@([0-9a-fA-F]{40})(\s*#\s*(\S.*))?")
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for line in text.splitlines():
             if line.strip().startswith("#"):
                 continue
@@ -546,10 +601,9 @@ def actions_pinned_to_full_sha_with_version_comment(root: Path, _facts: dict) ->
     return None
 
 
-def no_expression_interpolation_in_run_steps(root: Path, _facts: dict) -> ProbeResult:
+def no_expression_interpolation_in_run_steps(root: Path, facts: dict) -> ProbeResult:
     """Never put `${{ }}` inside a `run:` step; pass the value through `env:` instead."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for step in _steps(text):
             run_match = re.search(r"run:\s*(\||>)?\s*(.*)", step)
             if not run_match:
@@ -563,13 +617,12 @@ def no_expression_interpolation_in_run_steps(root: Path, _facts: dict) -> ProbeR
     return None
 
 
-def secrets_scan_configured_over_full_history(root: Path, _facts: dict) -> ProbeResult:
+def secrets_scan_configured_over_full_history(root: Path, facts: dict) -> ProbeResult:
     """Run the secrets scan over full history from the first commit."""
     pre_commit = _read_text(root / ".pre-commit-config.yaml") or ""
     if "gitleaks" not in pre_commit.lower():
         return (".pre-commit-config.yaml", "no gitleaks hook configured")
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for _path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         if "gitleaks" in text.lower() and "fetch-depth: 0" in text:
             return None
     return (
@@ -598,9 +651,9 @@ def dependabot_grouped_weekly_with_cooldown(root: Path, _facts: dict) -> ProbeRe
     return None
 
 
-def ruff_select_all_with_ignores_justified(root: Path, _facts: dict) -> ProbeResult:
+def ruff_select_all_with_ignores_justified(root: Path, facts: dict) -> ProbeResult:
     """Confirm ruff selects every rule and each ignore is justified in a comment."""
-    config = _load_toml(root / "pyproject.toml")
+    config = _cached(facts, "pyproject", lambda: _load_toml(root / "pyproject.toml"))
     if config is None:
         return ("pyproject.toml", "cannot read pyproject.toml")
     select = config.get("tool", {}).get("ruff", {}).get("lint", {}).get("select")
@@ -629,7 +682,7 @@ def ruff_select_all_with_ignores_justified(root: Path, _facts: dict) -> ProbeRes
     return None
 
 
-def concurrency_keyed_by_ref_on_pr_and_sha_on_push(root: Path, _facts: dict) -> ProbeResult:
+def concurrency_keyed_by_ref_on_pr_and_sha_on_push(root: Path, facts: dict) -> ProbeResult:
     """Confirm concurrency is keyed by ref on pull requests and sha on pushes.
 
     Only the triggers a workflow actually declares bind: a workflow with no
@@ -637,8 +690,7 @@ def concurrency_keyed_by_ref_on_pr_and_sha_on_push(root: Path, _facts: dict) -> 
     workflow_dispatch or workflow_call, has no such run to key and is
     exempt.
     """
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         triggers = _on_triggers(text)
         needs_ref = "pull_request" in triggers
         needs_sha = "push" in triggers
@@ -660,10 +712,9 @@ def concurrency_keyed_by_ref_on_pr_and_sha_on_push(root: Path, _facts: dict) -> 
     return None
 
 
-def ci_gate_job_fails_closed(root: Path, _facts: dict) -> ProbeResult:
+def ci_gate_job_fails_closed(root: Path, facts: dict) -> ProbeResult:
     """Confirm the required `ci` job has empty permissions, runs always, and fails closed."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         gate_jobs = [
             body
             for body in _jobs(text).values()
@@ -681,10 +732,9 @@ def ci_gate_job_fails_closed(root: Path, _facts: dict) -> ProbeResult:
     return (".github/workflows", "no gate job with permissions: {} and if: always() was found")
 
 
-def dependency_audit_workflow_separate_and_scheduled(root: Path, _facts: dict) -> ProbeResult:
+def dependency_audit_workflow_separate_and_scheduled(root: Path, facts: dict) -> ProbeResult:
     """Confirm pip-audit runs in its own scheduled workflow, outside the main gate."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for _path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         if "pip-audit" not in text:
             continue
         if "cron" in text and "pyproject.toml" in text:
@@ -692,19 +742,17 @@ def dependency_audit_workflow_separate_and_scheduled(root: Path, _facts: dict) -
     return (".github/workflows", "no separate, weekly, pyproject.toml-triggered pip-audit workflow")
 
 
-def diff_cover_runs_on_one_ci_leg(root: Path, _facts: dict) -> ProbeResult:
+def diff_cover_runs_on_one_ci_leg(root: Path, facts: dict) -> ProbeResult:
     """Confirm diff-cover runs on one CI leg once the repo reaches the finish stage."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for _path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         if "diff-cover" in text:
             return None
     return (".github/workflows", "no workflow runs diff-cover")
 
 
-def full_interpreter_matrix_everywhere(root: Path, _facts: dict) -> ProbeResult:
+def full_interpreter_matrix_everywhere(root: Path, facts: dict) -> ProbeResult:
     """Confirm no job still narrows its Python matrix on pull requests."""
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for name, body in _jobs(text).items():
             match = re.search(r"python-version:.*", body)
             if match and "pull_request" in match.group(0):
@@ -759,9 +807,9 @@ def readme_security_section_is_never_only(root: Path, _facts: dict) -> ProbeResu
     return None
 
 
-def no_lockfile_committed(root: Path, _facts: dict) -> ProbeResult:
+def no_lockfile_committed(root: Path, facts: dict) -> ProbeResult:
     """Never commit a lockfile."""
-    tracked = _tracked_files(root)
+    tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
     for name in LOCKFILE_NAMES:
         if not (root / name).exists():
             continue
@@ -780,7 +828,7 @@ def _tracked_files(root: Path) -> set[str] | None:
     return set(result.stdout.splitlines())
 
 
-def _python_source_files(root: Path) -> list[Path]:
+def _python_source_files(root: Path, facts: dict) -> list[Path]:
     """The repo's own `.py` files, never a dependency or a virtual environment.
 
     Prefers git-tracked paths, since that is the sure way to tell a
@@ -788,17 +836,18 @@ def _python_source_files(root: Path) -> list[Path]:
     directory walk is the fallback for a target with no git history to
     read, still skipping the directories nothing here ever wants scanned.
     """
-    tracked = _tracked_files(root)
+    tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
     if tracked is not None:
-        return [root / relative for relative in tracked if relative.endswith(".py")]
-    return [
+        return [root / relative for relative in sorted(tracked) if relative.endswith(".py")]
+    # Sorted, so the first offending file named is the same on every run.
+    return sorted(
         path
         for path in root.rglob("*.py")
         if not path.is_symlink() and not set(path.relative_to(root).parts) & set(_NON_SOURCE_DIRS)
-    ]
+    )
 
 
-def zero_tokens_beyond_builtin_github_token(root: Path, _facts: dict) -> ProbeResult:
+def zero_tokens_beyond_builtin_github_token(root: Path, facts: dict) -> ProbeResult:
     """Confirm no workflow references a secret beyond the built-in GITHUB_TOKEN.
 
     A secret name the owner recorded under `optins` in `.ossemble/state.json`
@@ -807,8 +856,7 @@ def zero_tokens_beyond_builtin_github_token(root: Path, _facts: dict) -> ProbeRe
     state = _load_json(root / ".ossemble" / "state.json")
     optins = state.get("optins") if isinstance(state, dict) else None
     allowed = set(optins) if isinstance(optins, (list, dict)) else set()
-    for path in _workflow_files(root):
-        text = _read_text(path) or ""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         for match in re.finditer(r"secrets\.([A-Za-z0-9_]+)", text):
             name = match.group(1)
             if name == "GITHUB_TOKEN" or name in allowed:
@@ -856,9 +904,9 @@ def no_gate_lowering_left_open_at_finish_stage(root: Path, _facts: dict) -> Prob
     return None
 
 
-def coverage_floor_at_least_seventy(root: Path, _facts: dict) -> ProbeResult:
+def coverage_floor_at_least_seventy(root: Path, facts: dict) -> ProbeResult:
     """Confirm the coverage floor is at least 70 percent."""
-    config = _load_toml(root / "pyproject.toml")
+    config = _cached(facts, "pyproject", lambda: _load_toml(root / "pyproject.toml"))
     if config is None:
         return ("pyproject.toml", "cannot read pyproject.toml")
     fail_under = config.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under")
@@ -870,9 +918,9 @@ def coverage_floor_at_least_seventy(root: Path, _facts: dict) -> ProbeResult:
     return None
 
 
-def coverage_floor_is_100_line_and_branch(root: Path, _facts: dict) -> ProbeResult:
+def coverage_floor_is_100_line_and_branch(root: Path, facts: dict) -> ProbeResult:
     """Enforce 100 percent line and branch coverage once the repo reaches the finish stage."""
-    config = _load_toml(root / "pyproject.toml")
+    config = _cached(facts, "pyproject", lambda: _load_toml(root / "pyproject.toml"))
     if config is None:
         return ("pyproject.toml", "cannot read pyproject.toml")
     fail_under = config.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under")
@@ -892,9 +940,9 @@ PRAGMA_LINE = re.compile(r"#\s*pragma:\s*no cover(?:\s*--\s*(\S.*))?")
 _NON_SOURCE_DIRS = (".git", ".venv", "venv", "node_modules", "__pycache__")
 
 
-def pragma_no_cover_only_on_main_guard_with_reason(root: Path, _facts: dict) -> ProbeResult:
+def pragma_no_cover_only_on_main_guard_with_reason(root: Path, facts: dict) -> ProbeResult:
     """Confirm every no-cover pragma sits on a __main__ guard with a reason."""
-    for path in _python_source_files(root):
+    for path in _python_source_files(root, facts):
         text = _read_text(path)
         if text is None:
             continue
