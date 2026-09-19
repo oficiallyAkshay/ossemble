@@ -1352,7 +1352,46 @@ def test_dependabot_grouped_weekly_with_cooldown_passes_for_a_well_formed_config
 
 
 def test_dependabot_grouped_weekly_with_cooldown_fails_when_the_file_is_missing(tmp_path) -> None:
+    """A workflow exists, so Dependabot would have something to update."""
+    assert (
+        audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts(has_workflows=True))
+        is not None
+    )
+
+
+def test_dependabot_grouped_weekly_with_cooldown_passes_with_no_workflow_and_no_manifest(
+    tmp_path,
+) -> None:
+    """No workflow and no dependency manifest: a dependabot file would configure nothing."""
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_fails_when_a_manifest_exists(tmp_path) -> None:
+    """A tracked manifest means Dependabot has something to update, even with no workflow."""
+    init_git_repo(tmp_path)
+    write(tmp_path, "pyproject.toml", '[project]\nname = "x"\n')
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=tmp_path, check=True)
     assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is not None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_finds_a_manifest_nested_under_a_subdirectory(
+    tmp_path,
+) -> None:
+    """A manifest need not sit at the root: a monorepo package's own manifest counts too."""
+    init_git_repo(tmp_path)
+    write(tmp_path, "packages/widget/requirements-dev.txt", "requests\n")
+    subprocess.run(["git", "add", "packages"], cwd=tmp_path, check=True)
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is not None
+
+
+def test_dependabot_grouped_weekly_with_cooldown_passes_with_tracked_files_but_no_manifest(
+    tmp_path,
+) -> None:
+    """A git repo with tracked files that match no manifest pattern still gets a pass."""
+    init_git_repo(tmp_path)
+    write(tmp_path, "README.md", "hello\n")
+    subprocess.run(["git", "add", "README.md"], cwd=tmp_path, check=True)
+    assert audit.dependabot_grouped_weekly_with_cooldown(tmp_path, facts()) is None
 
 
 def test_dependabot_grouped_weekly_with_cooldown_fails_without_a_weekly_interval(

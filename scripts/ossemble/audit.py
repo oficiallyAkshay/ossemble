@@ -5,6 +5,7 @@ A probe returns `None` when its rule holds, else an `(file, message)` gap.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import subprocess
@@ -675,24 +676,73 @@ def secrets_scan_configured_over_full_history(root: Path, facts: dict) -> ProbeR
 _DEPENDABOT_NAMES = (".github/dependabot.yml", ".github/dependabot.yaml")
 _COOLDOWN_DAYS = re.compile(r"cooldown:.*?default-days:\s*(\d+)", re.DOTALL)
 _MIN_COOLDOWN_DAYS = 7
+_DEPENDENCY_MANIFEST_PATTERNS = (
+    "pyproject.toml",
+    "requirements*.txt",
+    "setup.py",
+    "setup.cfg",
+    "Pipfile",
+    "package.json",
+    "go.mod",
+    "Cargo.toml",
+    "Gemfile",
+    "pom.xml",
+    "build.gradle",
+    "*.csproj",
+    "composer.json",
+    "Dockerfile",
+)
 
 
-def dependabot_grouped_weekly_with_cooldown(root: Path, _facts: dict) -> ProbeResult:
-    """Confirm every configured Dependabot ecosystem is grouped weekly with a cooldown."""
+def _has_dependency_manifest(root: Path, facts: dict) -> bool:
+    """A dependency manifest anywhere in the tracked tree Dependabot could open updates against.
+
+    Reuses the tracked-files cache instead of walking the tree again; a
+    target with no tracked-files cache and no `.git` is treated as having
+    none, rather than falling back to a fresh filesystem walk.
+    """
+    tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
+    if tracked is None:
+        return False
+    for relative in tracked:
+        name = Path(relative).name
+        for pattern in _DEPENDENCY_MANIFEST_PATTERNS:
+            if fnmatch.fnmatch(name, pattern):
+                return True
+    return False
+
+
+def _dependabot_entry_issue(entry: str) -> str | None:
+    """The problem with one Dependabot update entry, or None when it is well configured."""
+    if not re.search(r"interval:\s*[\"']?weekly[\"']?", entry):
+        return "an ecosystem has no weekly schedule interval"
+    cooldown = _COOLDOWN_DAYS.search(entry)
+    if not cooldown or int(cooldown.group(1)) < _MIN_COOLDOWN_DAYS:
+        return "an ecosystem has no seven-day cooldown"
+    if "groups:" not in entry:
+        return "an ecosystem's updates are not grouped"
+    return None
+
+
+def dependabot_grouped_weekly_with_cooldown(root: Path, facts: dict) -> ProbeResult:
+    """Confirm every configured Dependabot ecosystem is grouped weekly with a cooldown.
+
+    Only where Dependabot would have something to update: a repo with no
+    workflow and no dependency manifest gets a pass rather than a gap for
+    a file that would configure nothing.
+    """
     name = next((n for n in _DEPENDABOT_NAMES if (root / n).is_file()), None)
     if name is None:
+        if not facts.get("has_workflows") and not _has_dependency_manifest(root, facts):
+            return None
         return (_DEPENDABOT_NAMES[0], "file is missing")
     entries = _list_items_under(_read_text(root / name) or "", "updates")
     if not entries:
         return (name, "no package-ecosystem update is configured")
     for entry in entries:
-        if not re.search(r"interval:\s*[\"']?weekly[\"']?", entry):
-            return (name, "an ecosystem has no weekly schedule interval")
-        cooldown = _COOLDOWN_DAYS.search(entry)
-        if not cooldown or int(cooldown.group(1)) < _MIN_COOLDOWN_DAYS:
-            return (name, "an ecosystem has no seven-day cooldown")
-        if "groups:" not in entry:
-            return (name, "an ecosystem's updates are not grouped")
+        issue = _dependabot_entry_issue(entry)
+        if issue:
+            return (name, issue)
     return None
 
 
