@@ -288,6 +288,8 @@ When GitHub GraphQL is unavailable for the session (`references/hosts.md` has th
 
 After the wave: CI decides each PR, worktrees for merged branches are tidied (`git worktree remove`, delete the local branch), main is checked green, and the coverage floor is raised to the number actually achieved with `python3 scripts/ossemble floor --coverage-xml coverage.xml`. (PRC-001, TST-001) Parallel PRs that touch the same file rebase; the brief for the later one says so. A PR whose base merged under it gets `--base main` by message, not a relaunch. A dropped builder is relaunched with the recoverer role in `references/agents.md`, instructed to check the leftovers first: `git status --short` in the worktree, an existing branch, an existing PR; continue rather than duplicate. A container restart kills every background builder, but worktrees and pushed branches survive it, which is why this check comes before any relaunch.
 
+Wave width is whatever the ownership map says, capped by what the host will actually run at once; four builders ran in parallel on this build with no conflicts because no path had two owners. A builder that dies costs only its own worktree's work, not the wave; a container restart's blast radius and the recovery from it are described above. When the host caps concurrency below the number of owners, dispatch in waves by the map's rows rather than splitting an owner's paths, since splitting an owner reintroduces the conflicts the map exists to prevent.
+
 ## 5 Lean, prove, cut
 
 Who decides: model, from read-only evidence; the owner only if a cut needs saying twice.

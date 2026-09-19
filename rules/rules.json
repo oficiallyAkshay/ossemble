@@ -519,7 +519,7 @@
   },
   {
     "id": "PRC-002",
-    "text": "Send delegated work to the cheapest reliable model, Sonnet for code and prose and Haiku for lookups and one-line edits, and give every builder brief the worktree command, the files to read first, the hard rules, the exact verification commands, the commit title and trailer, the push command, the pull request body template, the auto-merge command, a rebase instruction and a word limit on the report.",
+    "text": "Send delegated work to the cheapest model that is reliable for the job: a mid-tier model (Sonnet) for anything that writes code or prose a stranger will read, and a small fast model (Haiku) for lookups, one-line edits and reading a leftover worktree, and give every builder brief the worktree command, the files to read first, the hard rules, the exact verification commands, the commit title and trailer, the push command, the pull request body template, the auto-merge command, a rebase instruction and a word limit on the report.",
     "basis": "prompt section 3",
     "category": "process",
     "kind": "default",
@@ -652,6 +652,15 @@
     "category": "process",
     "kind": "default",
     "stage": "finish",
+    "check": "judgment"
+  },
+  {
+    "id": "PRC-017",
+    "text": "Keep the orchestrator session free of the work itself, dispatching every edit, review, scout and fact check to a subagent, so the session that holds the plan never fills with one task's context.",
+    "basis": "this build, where the orchestrator dispatched every change and kept the plan across about thirty pull requests",
+    "category": "process",
+    "kind": "default",
+    "stage": "build",
     "check": "judgment"
   },
   {
