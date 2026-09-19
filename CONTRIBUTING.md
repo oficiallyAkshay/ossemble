@@ -19,6 +19,16 @@ and friends); the runtime script itself depends on nothing beyond the
 standard library. Run the two commands above before every push; CI runs
 the same checks and will not tell you anything new if they already pass.
 
+There is a third check, run separately because it clones real repos:
+`python3 tests/eval/consumers.py`. It runs the audit against thirteen
+pinned public repos and compares the rows it prints with the ones
+stored in `tests/eval/consumers.json`, so a probe change that starts or
+stops flagging something real is visible in the diff, not just in the
+test suite. It clones into `$RUNNER_TEMP` on a runner, or a system
+temp directory otherwise, never into the repo. If you meant to change
+what fires, update the stored snapshot in the same pull request with
+`python3 tests/eval/consumers.py --update`.
+
 ### How a change lands
 
 One branch per change, one commit or a small stack you are happy to

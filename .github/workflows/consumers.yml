@@ -1,0 +1,42 @@
+# Trains the audit against real-world usage: tests/eval/consumers.py
+# clones a fixed set of public repos at pinned commits, audits each, and
+# compares the result with the rows stored in tests/eval/consumers.json.
+# A probe change that alters those rows must update the snapshot in the
+# same pull request, so a reviewer sees exactly which rows appeared or
+# vanished. Not added to the branch ruleset: a finding here is reviewed,
+# not a merge gate.
+name: consumers
+
+on:
+  schedule:
+    # Weekly, off audit.yml's own minute so the two never compete for a
+    # runner.
+    - cron: "17 5 * * 3"
+  pull_request:
+    paths:
+      - rules/**
+      - scripts/ossemble/**
+      - tests/eval/**
+      - .github/workflows/consumers.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: consumers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  consumers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The script is standard library only and clones its own fixtures;
+      # the runner's own python3 (3.12+) is enough, no uv sync.
+      - name: audit the pinned community repos
+        run: python3 tests/eval/consumers.py

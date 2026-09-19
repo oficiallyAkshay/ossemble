@@ -1,0 +1,190 @@
+[
+  {
+    "repo": "actions/checkout",
+    "commit": "f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a",
+    "rows": [
+      "CI-003  .github/workflows/check-dist.yml",
+      "CI-004  .github/workflows/test.yml",
+      "HRD-001  .github/workflows/check-dist.yml",
+      "HRD-002  .github/workflows/check-dist.yml",
+      "HRD-003  .github/workflows/check-dist.yml",
+      "HRD-004  .github/workflows/check-dist.yml",
+      "HRD-005  .github/workflows/check-dist.yml",
+      "HRD-006  .github/workflows/test.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "HRD-008  .github/dependabot.yml"
+    ]
+  },
+  {
+    "repo": "anthropics/skills",
+    "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+    "rows": [
+      "HRD-008  .github/dependabot.yml",
+      "PRV-001  .",
+      "STR-001  pyproject.toml",
+      "STR-002  pyproject.toml",
+      "TST-001  pyproject.toml"
+    ]
+  },
+  {
+    "repo": "astral-sh/setup-uv",
+    "commit": "f5548c55522a1db0af3c84f2af3d058bc9bc2de2",
+    "rows": [
+      "CI-003  .github/workflows/codeql-analysis.yml",
+      "HRD-001  .github/workflows/test.yml",
+      "HRD-002  .github/workflows/release.yml",
+      "HRD-003  .github/workflows/codeql-analysis.yml",
+      "HRD-004  .github/workflows/update-docs.yml",
+      "HRD-006  .github/workflows/test.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "HRD-008  .github/dependabot.yml"
+    ]
+  },
+  {
+    "repo": "github/ruleset-recipes",
+    "commit": "82adf8954a5cafb9722c18c421b9834c24ec0cd0",
+    "rows": [
+      "HRD-008  .github/dependabot.yml",
+      "PRV-001  ."
+    ]
+  },
+  {
+    "repo": "hynek/structlog",
+    "commit": "73393f34b40c15688b3fdd0982889b225f11b59b",
+    "rows": [
+      "CI-003  .github/workflows/build-docset.yml",
+      "CI-004  .github/workflows/ci.yml",
+      "HRD-002  .github/workflows/build-docset.yml",
+      "HRD-003  .github/workflows/build-docset.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "HRD-008  .github/dependabot.yml",
+      "PRV-001  .",
+      "STR-001  pyproject.toml",
+      "STR-002  pyproject.toml",
+      "TST-001  pyproject.toml"
+    ]
+  },
+  {
+    "repo": "oficiallyAkshay/clonometer",
+    "commit": "2c82a8779a68d2babb1e5e856d2ae69253dcd611",
+    "rows": [
+      "CI-003  .github/workflows/codeql.yml",
+      "HRD-001  .github/workflows/ci.yml",
+      "HRD-002  .github/workflows/clonometer.yml",
+      "NO-003  .github/workflows/clonometer.yml",
+      "STR-002  pyproject.toml",
+      "TST-003  clonometer.py"
+    ]
+  },
+  {
+    "repo": "ossf/scorecard-action",
+    "commit": "e8e61e86ea0a152be84d03729c02a7300065c17d",
+    "rows": [
+      "CI-003  .github/workflows/codeql-analysis.yml",
+      "CI-004  .github/workflows/tests.yaml",
+      "HRD-001  .github/workflows/codeql-analysis.yml",
+      "HRD-002  .github/workflows/dependency-review.yml",
+      "HRD-003  .github/workflows/codeql-analysis.yml",
+      "HRD-004  .github/workflows/codeql-analysis.yml",
+      "HRD-005  .github/workflows/scorecards.yml",
+      "HRD-006  .github/workflows/tests.yaml",
+      "HRD-007  .pre-commit-config.yaml",
+      "HRD-008  .github/dependabot.yml"
+    ]
+  },
+  {
+    "repo": "pypa/pipx",
+    "commit": "cba4115aa7589306560e62dd42e9259340744e7d",
+    "rows": [
+      "CI-003  .github/workflows/release.yml",
+      "CI-004  .github/workflows/tests.yml",
+      "HRD-001  .github/workflows/create_tests_package_lists.yml",
+      "HRD-002  .github/workflows/create_tests_package_lists.yml",
+      "HRD-003  .github/workflows/create_tests_package_lists.yml",
+      "HRD-006  .github/workflows/create_tests_package_lists.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "NO-001  uv.lock",
+      "NO-003  .github/workflows/pre-release.yml",
+      "STR-001  pyproject.toml",
+      "STR-002  pyproject.toml",
+      "TST-001  pyproject.toml"
+    ]
+  },
+  {
+    "repo": "python-attrs/attrs",
+    "commit": "8f767776326faaed11e6c2974798787f6e19b343",
+    "rows": [
+      "CI-003  .github/workflows/build-docset.yml",
+      "CI-004  .github/workflows/ci.yml",
+      "HRD-002  .github/workflows/build-docset.yml",
+      "HRD-003  .github/workflows/build-docset.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "HRD-008  .github/dependabot.yml",
+      "NO-001  uv.lock",
+      "STR-002  pyproject.toml",
+      "TST-001  pyproject.toml"
+    ]
+  },
+  {
+    "repo": "sethvargo/ratchet",
+    "commit": "a7ead07a89972fef4316ad196af18f87ac77bb97",
+    "rows": [
+      "CI-003  .github/workflows/release.yml",
+      "CI-004  .github/workflows/test.yml",
+      "HRD-001  .github/workflows/release.yml",
+      "HRD-002  .github/workflows/release.yml",
+      "HRD-003  .github/workflows/release.yml",
+      "HRD-004  .github/workflows/release.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "HRD-008  .github/dependabot.yml",
+      "PRV-001  ."
+    ]
+  },
+  {
+    "repo": "step-security/harden-runner",
+    "commit": "e14015d583714f6e62063499dc959a02595150a1",
+    "rows": [
+      "CI-003  .github/workflows/codeql-analysis.yml",
+      "CI-004  .github/workflows/test.yml",
+      "HRD-001  .github/workflows/canary.yml",
+      "HRD-002  .github/workflows/dependency-review.yml",
+      "HRD-003  .github/workflows/canary.yml",
+      "HRD-004  .github/workflows/canary.yml",
+      "HRD-005  .github/workflows/canary.yml",
+      "HRD-007  .github/workflows",
+      "HRD-008  .github/dependabot.yml",
+      "NO-003  .github/workflows/canary.yml",
+      "PRV-001  ."
+    ]
+  },
+  {
+    "repo": "vercel-labs/agent-skills",
+    "commit": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "rows": [
+      "CI-003  .github/workflows/agent-skills-discovery.yml",
+      "CI-004  .github/workflows/agent-skills-discovery.yml",
+      "HRD-001  .github/workflows/agent-skills-discovery.yml",
+      "HRD-002  .github/workflows/react-best-practices-ci.yml",
+      "HRD-003  .github/workflows/agent-skills-discovery.yml",
+      "HRD-004  .github/workflows/agent-skills-discovery.yml",
+      "HRD-005  .github/workflows/agent-skills-discovery.yml",
+      "HRD-006  .github/workflows/agent-skills-discovery.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "HRD-008  .github/dependabot.yml"
+    ]
+  },
+  {
+    "repo": "zizmorcore/zizmor",
+    "commit": "e5b9690d7341830c494cdd24f1803623917873d9",
+    "rows": [
+      "CI-003  .github/workflows/benchmark.yml",
+      "HRD-002  .github/workflows/benchmark.yml",
+      "HRD-003  .github/workflows/benchmark.yml",
+      "HRD-007  .pre-commit-config.yaml",
+      "NO-001  uv.lock",
+      "PRV-001  .",
+      "STR-002  pyproject.toml",
+      "TST-001  pyproject.toml"
+    ]
+  }
+]
