@@ -839,6 +839,9 @@
     "kind": "default",
     "stage": "build",
     "check": "audit",
+    "when": {
+      "language": "python"
+    },
     "probe": "stdlib_only_runtime_dependencies"
   },
   {
@@ -849,6 +852,9 @@
     "kind": "default",
     "stage": "build",
     "check": "audit",
+    "when": {
+      "language": "python"
+    },
     "probe": "dev_tooling_in_dependency_group"
   },
   {
@@ -910,6 +916,9 @@
     "kind": "default",
     "stage": "build",
     "check": "audit",
+    "when": {
+      "language": "python"
+    },
     "probe": "coverage_floor_at_least_seventy"
   },
   {
@@ -920,6 +929,9 @@
     "kind": "default",
     "stage": "finish",
     "check": "audit",
+    "when": {
+      "language": "python"
+    },
     "probe": "coverage_floor_is_100_line_and_branch"
   },
   {

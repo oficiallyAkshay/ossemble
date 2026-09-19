@@ -254,9 +254,10 @@ def run(args: argparse.Namespace) -> int:
 def _gather_facts(root: Path, *, use_api: bool) -> dict:
     workflow_items = _workflow_item_list(root)
     pyproject = _load_toml(root / "pyproject.toml")
+    tracked_files = _tracked_files(root)
     facts: dict = {
         "has_workflows": bool(workflow_items),
-        "language": "python" if (root / "pyproject.toml").is_file() else None,
+        "language": _detect_language(root, tracked_files),
         "shape": None,
         "public": None,
         "stage": _stage_from_config(pyproject),
@@ -264,7 +265,7 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
         "ruleset": None,
         "workflow_items": workflow_items,
         "pyproject": pyproject,
-        "tracked_files": _tracked_files(root),
+        "tracked_files": tracked_files,
     }
     if use_api:
         owner_repo = _remote_owner_repo(root)
@@ -281,6 +282,29 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
             except (RuntimeError, OSError, json.JSONDecodeError, KeyError):
                 pass
     return facts
+
+
+def _detect_language(root: Path, tracked_files: set[str] | None) -> str:
+    """`python` when the repo has a pyproject.toml or a tracked `.py` file of its own.
+
+    A rule whose probe reads pyproject.toml applies only to a Python repo,
+    so a repo that is neither gets none of those rows. A `.py` file under
+    tests/ or under a dot-prefixed top-level directory (a plugin shim, a
+    tool's own config) does not by itself make the repo a Python project.
+    `tracked_files` is None when `root` is not a git repository, in which
+    case only the pyproject.toml check can decide.
+    """
+    if (root / "pyproject.toml").is_file():
+        return "python"
+    if tracked_files is not None:
+        for relative in tracked_files:
+            if not relative.endswith(".py"):
+                continue
+            top = relative.split("/", 1)[0]
+            if top == "tests" or top.startswith("."):
+                continue
+            return "python"
+    return "other"
 
 
 def _applies(when: dict, facts: dict) -> bool:
