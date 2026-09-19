@@ -862,6 +862,28 @@ def test_actions_pinned_to_full_sha_with_version_comment_ignores_uses_mentioned_
     assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
 
 
+def test_actions_pinned_to_full_sha_with_version_comment_passes_for_a_justified_self_reference(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: acme/acme@main # zizmor: ignore[unpinned-uses] this repo is acme\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_fails_for_an_ignore_with_no_reason(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: acme/acme@main # zizmor: ignore[unpinned-uses]\n",
+    )
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is not None
+
+
 def test_no_expression_interpolation_in_run_steps_passes_when_env_carries_the_value(
     tmp_path,
 ) -> None:
@@ -1030,8 +1052,31 @@ def test_ruff_select_all_with_ignores_justified_fails_for_a_security_ignore_outs
     assert audit.ruff_select_all_with_ignores_justified(tmp_path, facts()) is not None
 
 
+def test_on_triggers_returns_empty_when_there_is_no_on_line() -> None:
+    assert audit._on_triggers("jobs: {}\n") == set()
+
+
+def test_on_triggers_reads_a_single_inline_trigger() -> None:
+    assert audit._on_triggers("on: push\njobs: {}\n") == {"push"}
+
+
+def test_on_triggers_reads_an_inline_list_of_triggers() -> None:
+    assert audit._on_triggers("on: [push, pull_request]\njobs: {}\n") == {"push", "pull_request"}
+
+
+def test_on_triggers_reads_a_block_of_triggers() -> None:
+    text = 'on:\n  schedule:\n    - cron: "0 0 * * 1"\n  workflow_dispatch:\njobs: {}\n'
+    assert audit._on_triggers(text) == {"schedule", "workflow_dispatch"}
+
+
+def test_on_triggers_returns_empty_when_the_on_block_ends_the_file_with_no_newline() -> None:
+    assert audit._on_triggers("jobs: {}\non:") == set()
+
+
+ON_PULL_REQUEST_AND_PUSH = "on:\n  pull_request:\n  push:\n    branches: [main]\n"
+
 CONCURRENCY_GOOD = (
-    "concurrency:\n"
+    ON_PULL_REQUEST_AND_PUSH + "concurrency:\n"
     "  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}\n"
     "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
     "jobs: {}\n"
@@ -1046,14 +1091,17 @@ def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_passes_for_the_standard_
 
 
 def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_fails_when_missing(tmp_path) -> None:
-    workflow(tmp_path, "jobs: {}\n")
+    workflow(tmp_path, ON_PULL_REQUEST_AND_PUSH + "jobs: {}\n")
     assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is not None
 
 
 def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_fails_when_not_keyed_by_both(
     tmp_path,
 ) -> None:
-    workflow(tmp_path, "concurrency:\n  group: ci-${{ github.ref }}\njobs: {}\n")
+    workflow(
+        tmp_path,
+        ON_PULL_REQUEST_AND_PUSH + "concurrency:\n  group: ci-${{ github.ref }}\njobs: {}\n",
+    )
     assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is not None
 
 
@@ -1062,9 +1110,58 @@ def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_fails_without_cancel_in_
 ) -> None:
     workflow(
         tmp_path,
-        "concurrency:\n"
+        ON_PULL_REQUEST_AND_PUSH + "concurrency:\n"
         "  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}\n"
         "jobs: {}\n",
+    )
+    assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is not None
+
+
+def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_passes_for_pull_request_only_keyed_by_ref(
+    tmp_path,
+) -> None:
+    """A pull_request-only workflow, such as a dependency audit, needs no sha key: no push."""
+    workflow(
+        tmp_path,
+        "on:\n"
+        '  schedule:\n    - cron: "51 6 * * 2"\n'
+        "  pull_request:\n    paths:\n      - pyproject.toml\n"
+        "concurrency:\n"
+        "  group: audit-${{ github.event_name == 'pull_request' && github.ref || 'schedule' }}\n"
+        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
+        "jobs: {}\n",
+    )
+    assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is None
+
+
+def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_exempts_a_schedule_only_workflow(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        'on:\n  schedule:\n    - cron: "0 0 * * 1"\n  workflow_dispatch:\njobs: {}\n',
+    )
+    assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is None
+
+
+def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_does_not_exempt_pull_request_plus_schedule(
+    tmp_path,
+) -> None:
+    """Adding schedule alongside pull_request does not exempt the workflow."""
+    workflow(
+        tmp_path,
+        'on:\n  schedule:\n    - cron: "0 0 * * 1"\n  pull_request:\njobs: {}\n',
+    )
+    assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is not None
+
+
+def test_concurrency_keyed_by_ref_on_pr_and_sha_on_push_fails_when_pull_request_lacks_a_ref_key(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\n"
+        "concurrency:\n  group: audit\n  cancel-in-progress: true\njobs: {}\n",
     )
     assert audit.concurrency_keyed_by_ref_on_pr_and_sha_on_push(tmp_path, facts()) is not None
 
@@ -1303,6 +1400,45 @@ def test_zero_tokens_beyond_builtin_github_token_fails_for_another_secret(tmp_pa
         tmp_path,
         "jobs:\n  build:\n    steps:\n      - env:\n          T: ${{ secrets.NPM_TOKEN }}\n",
     )
+    result = audit.zero_tokens_beyond_builtin_github_token(tmp_path, facts())
+    assert result is not None
+    assert "unless recorded under optins in .ossemble/state.json" in result[1]
+
+
+def test_zero_tokens_beyond_builtin_github_token_passes_for_a_secret_listed_under_optins_as_a_list(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - env:\n          T: ${{ secrets.NPM_TOKEN }}\n",
+    )
+    write(tmp_path, ".ossemble/state.json", json.dumps({"optins": ["NPM_TOKEN"]}))
+    assert audit.zero_tokens_beyond_builtin_github_token(tmp_path, facts()) is None
+
+
+def test_zero_tokens_beyond_builtin_github_token_passes_for_a_secret_listed_under_optins_object(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - env:\n          T: ${{ secrets.NPM_TOKEN }}\n",
+    )
+    write(
+        tmp_path,
+        ".ossemble/state.json",
+        json.dumps({"optins": {"NPM_TOKEN": "needed to publish"}}),
+    )
+    assert audit.zero_tokens_beyond_builtin_github_token(tmp_path, facts()) is None
+
+
+def test_zero_tokens_beyond_builtin_github_token_fails_for_a_secret_not_listed_under_optins(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - env:\n          T: ${{ secrets.NPM_TOKEN }}\n",
+    )
+    write(tmp_path, ".ossemble/state.json", json.dumps({"optins": ["OTHER_TOKEN"]}))
     assert audit.zero_tokens_beyond_builtin_github_token(tmp_path, facts()) is not None
 
 
@@ -1354,15 +1490,6 @@ def test_no_gate_lowering_left_open_at_finish_stage_fails_when_a_gate_is_still_l
 ) -> None:
     write(tmp_path, ".ossemble/state.json", json.dumps({"lowered": [{"gate": "coverage"}]}))
     assert audit.no_gate_lowering_left_open_at_finish_stage(tmp_path, facts()) is not None
-
-
-def test_no_security_md_passes_when_absent(tmp_path) -> None:
-    assert audit.no_security_md(tmp_path, facts()) is None
-
-
-def test_no_security_md_fails_when_present(tmp_path) -> None:
-    write(tmp_path, "SECURITY.md", "# security\n")
-    assert audit.no_security_md(tmp_path, facts()) is not None
 
 
 def test_coverage_floor_at_least_seventy_passes_at_the_floor(tmp_path) -> None:
