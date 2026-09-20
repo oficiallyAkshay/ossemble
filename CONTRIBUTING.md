@@ -46,6 +46,12 @@ merge --auto --rebase`) and walk away. CI is the review: nothing here
 waits on a human approval, and the `ci` check is the only one the branch
 ruleset requires. If CI fails, push a fix to the same branch.
 
+A Dependabot pull request arms itself: `dependabot-auto-merge.yml`
+(`.github/workflows/dependabot-auto-merge.yml`) runs `gh pr merge
+--auto --rebase` for every pull request opened by `dependabot[bot]`, so
+nobody has to click it by hand. The same `ci` check still gates the
+merge either way.
+
 ### What to add where
 
 - **A new rule.** Add an object to `rules/rules.json` (see the schema

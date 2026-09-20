@@ -34,6 +34,14 @@ A separate `audit.yml` (from the `audit-deps` template set) runs
 outside the required gate, so a dependency finding never blocks a
 merge on its own.
 
+`dependabot-auto-merge.yml` (from the `dependabot-automerge` template
+set, CI-010) arms `gh pr merge --auto --rebase` on every pull request
+opened by `dependabot[bot]`; the branch ruleset's required `ci` check
+still has to pass before GitHub merges anything, so this only removes
+the manual click. It is only added once coverage is enforced at 100
+percent, `ci` is the required check, and every action is hash-pinned —
+true here, so the workflow is in.
+
 The coverage floor itself lives in `pyproject.toml`'s
 `[tool.coverage.report] fail_under`, and is how `resume` and `audit`
 tell the build stage from the finish stage: 100 means finish, anything
