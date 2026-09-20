@@ -1,8 +1,10 @@
 # Contributing
 
-This file has two halves. The first is for a person making a change by
-hand. The second is dense reference for an agent, or for anyone wiring
-this repo into CI; skip it unless you need it.
+This file is for a person making a change by hand. Dense reference for
+an agent, or for anyone wiring this repo into CI, lives in
+[AGENTS.md](AGENTS.md) at the repo root: the subcommand contract, exit
+codes, CI shape, pre-commit hooks, template sets, badge recipes, the
+rule schema and the state file.
 
 ## For people
 
@@ -47,7 +49,8 @@ ruleset requires. If CI fails, push a fix to the same branch.
 ### What to add where
 
 - **A new rule.** Add an object to `rules/rules.json` (see the schema
-  below) and, if it is machine-checkable, a matching probe function in
+  in [references/rule-schema.md](references/rule-schema.md)) and, if it
+  is machine-checkable, a matching probe function in
   `scripts/ossemble/audit.py`.
 - **A new template.** Add the file under `templates/`, then an entry in
   `templates/manifest.json` naming its destination, its set and the
@@ -58,24 +61,3 @@ ruleset requires. If CI fails, push a fix to the same branch.
 ### Reporting a vulnerability
 
 Open an issue. This repo has no private reporting channel, by design.
-
-## For agents and CI
-
-Run any subcommand as `python3 scripts/ossemble <subcommand>`, or add
-`--help` for its authoritative flags. Exit 0 means done and clean,
-exit 1 means gaps, drift, a taken name or a failure, and exit 2 is
-argparse's own for a bad invocation. The full subcommand table and
-what exit 1 means for each is in [references/cli.md](references/cli.md).
-
-- **CI shape.** Three required jobs, the coverage floor ramp and the
-  audit-deps workflow, in [references/ci-shape.md](references/ci-shape.md).
-- **Pre-commit hooks.** What runs and why two env vars are unset, in
-  [references/pre-commit.md](references/pre-commit.md).
-- **Template sets.** Stamping, drift and the manifest fields, in
-  [references/templates.md](references/templates.md).
-- **Badge recipes.** Fill-in URLs for coverage and licence badges, in
-  [references/badge-recipes.md](references/badge-recipes.md).
-- **Rule schema.** The fields `rules/rules.json` expects, in
-  [references/rule-schema.md](references/rule-schema.md).
-- **State file.** What `.ossemble/state.json` holds and how `resume`
-  uses it, in [references/state.md](references/state.md).
