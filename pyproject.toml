@@ -1,6 +1,6 @@
 [project]
 name = "ossemble"
-version = "1.0.0"
+version = "1.1.0"
 requires-python = ">=3.11"
 # Standard library only: the skill's script runs wherever the agent runs,
 # nothing to resolve.

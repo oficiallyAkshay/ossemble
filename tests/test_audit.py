@@ -26,6 +26,7 @@ BASE_FACTS = {
     "repo_settings": None,
     "ruleset": None,
     "automated_security_fixes": None,
+    "private_vulnerability_reporting": None,
 }
 
 
@@ -430,6 +431,111 @@ def test_run_evaluates_an_api_rule_when_the_api_flag_is_given(
     assert exit_code == 1
 
 
+def test_run_json_with_api_nests_gaps_and_names_an_unverified_rule_id(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    """A probe that records itself unverified never becomes a gap row; `--api --json` names it."""
+    stub_rules(
+        monkeypatch,
+        tmp_path,
+        [_rule(id="NO-011", check="api", probe="security_reporting_route_must_be_on")],
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+    write(
+        tmp_path,
+        "SECURITY.md",
+        "Use https://github.com/an-owner/a-repo/security/advisories/new\n",
+    )
+
+    def fake_gh_api(path):
+        raise RuntimeError("gh: not authenticated")
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=True, api=True))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {"gaps": [], "unverified": ["NO-011"]}
+
+
+def test_run_json_without_api_stays_a_plain_list_even_with_a_stubbed_api_rule(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    """`--json` alone never nests: an api-check rule cannot run, so nothing is ever unverified."""
+    stub_rules(
+        monkeypatch,
+        tmp_path,
+        [_rule(id="NO-011", check="api", probe="security_reporting_route_must_be_on")],
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=True, api=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == []
+
+
+def test_run_prints_an_unverified_line_in_text_mode(tmp_path, capsys, monkeypatch) -> None:
+    stub_rules(
+        monkeypatch,
+        tmp_path,
+        [_rule(id="NO-011", check="api", probe="security_reporting_route_must_be_on")],
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+    write(
+        tmp_path,
+        "SECURITY.md",
+        "Use https://github.com/an-owner/a-repo/security/advisories/new\n",
+    )
+    monkeypatch.setattr(
+        audit, "_gh_api", lambda path: (_ for _ in ()).throw(RuntimeError("gh: not authenticated"))
+    )
+
+    exit_code = audit.run(argparse.Namespace(path=str(tmp_path), as_json=False, api=True))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == "Unverified: NO-011"
+
+
+def test_gaps_never_includes_an_unverified_probes_marker(tmp_path, monkeypatch) -> None:
+    """The public `gaps()` helper (used by `resume`) only ever returns gap rows."""
+    stub_rules(
+        monkeypatch,
+        tmp_path,
+        [_rule(id="NO-011", check="api", probe="security_reporting_route_must_be_on")],
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+    write(
+        tmp_path,
+        "SECURITY.md",
+        "Use https://github.com/an-owner/a-repo/security/advisories/new\n",
+    )
+    monkeypatch.setattr(
+        audit, "_gh_api", lambda path: (_ for _ in ()).throw(RuntimeError("gh: not authenticated"))
+    )
+
+    rows = audit.gaps(tmp_path, use_api=True)
+
+    assert rows == []
+
+
 def test_run_reads_rules_from_ossemble_not_the_target_even_without_a_rules_dir(
     tmp_path, capsys
 ) -> None:
@@ -700,6 +806,7 @@ def test_gather_facts_leaves_public_and_settings_unset_without_the_api_flag(tmp_
     assert result["repo_settings"] is None
     assert result["ruleset"] is None
     assert result["automated_security_fixes"] is None
+    assert result["private_vulnerability_reporting"] is None
 
 
 def test_gather_facts_reads_repo_settings_the_main_ruleset_and_security_fixes_with_the_api_flag(
@@ -721,6 +828,8 @@ def test_gather_facts_reads_repo_settings_the_main_ruleset_and_security_fixes_wi
             return {"enforcement": "active"}
         if path == "repos/an-owner/a-repo/automated-security-fixes":
             return {"enabled": True, "paused": False}
+        if path == "repos/an-owner/a-repo/private-vulnerability-reporting":
+            return {"enabled": True}
         raise AssertionError(f"unexpected path {path}")
 
     monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
@@ -731,6 +840,7 @@ def test_gather_facts_reads_repo_settings_the_main_ruleset_and_security_fixes_wi
     assert result["repo_settings"] == {"private": False}
     assert result["ruleset"] == {"enforcement": "active"}
     assert result["automated_security_fixes"] == {"enabled": True, "paused": False}
+    assert result["private_vulnerability_reporting"] == {"enabled": True}
 
 
 def test_gather_facts_skips_a_non_main_ruleset_before_finding_the_main_one(
@@ -752,6 +862,8 @@ def test_gather_facts_skips_a_non_main_ruleset_before_finding_the_main_one(
             return {"enforcement": "active"}
         if path == "repos/an-owner/a-repo/automated-security-fixes":
             return {"enabled": True, "paused": False}
+        if path == "repos/an-owner/a-repo/private-vulnerability-reporting":
+            return {"enabled": True}
         raise AssertionError(f"unexpected path {path}")
 
     monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
@@ -778,6 +890,8 @@ def test_gather_facts_leaves_the_ruleset_unset_when_none_is_named_main(
             return [{"id": 1, "name": "other"}]
         if path == "repos/an-owner/a-repo/automated-security-fixes":
             return {"enabled": True, "paused": False}
+        if path == "repos/an-owner/a-repo/private-vulnerability-reporting":
+            return {"enabled": True}
         raise AssertionError(f"unexpected path {path}")
 
     monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
@@ -805,6 +919,7 @@ def test_gather_facts_tolerates_a_failing_gh_api_call(tmp_path, monkeypatch) -> 
     assert result["repo_settings"] is None
     assert result["ruleset"] is None
     assert result["automated_security_fixes"] is None
+    assert result["private_vulnerability_reporting"] is None
 
 
 def test_gather_facts_tolerates_a_failing_automated_security_fixes_call(
@@ -824,6 +939,8 @@ def test_gather_facts_tolerates_a_failing_automated_security_fixes_call(
             return []
         if path == "repos/an-owner/a-repo/automated-security-fixes":
             raise RuntimeError("gh: not found")
+        if path == "repos/an-owner/a-repo/private-vulnerability-reporting":
+            return {"enabled": True}
         raise AssertionError(f"unexpected path {path}")
 
     monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
@@ -832,6 +949,41 @@ def test_gather_facts_tolerates_a_failing_automated_security_fixes_call(
 
     assert result["repo_settings"] == {"private": True}
     assert result["automated_security_fixes"] is None
+    assert result["private_vulnerability_reporting"] == {"enabled": True}
+
+
+def test_gather_facts_tolerates_a_failing_private_vulnerability_reporting_call_alone(
+    tmp_path, monkeypatch
+) -> None:
+    """A failure on this one endpoint never blanks the repo settings or ruleset calls."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def fake_gh_api(path):
+        if path == "repos/an-owner/a-repo":
+            return {"private": True}
+        if path == "repos/an-owner/a-repo/rulesets":
+            return [{"id": 1, "name": "main"}]
+        if path == "repos/an-owner/a-repo/rulesets/1":
+            return {"enforcement": "active"}
+        if path == "repos/an-owner/a-repo/automated-security-fixes":
+            return {"enabled": True, "paused": False}
+        if path == "repos/an-owner/a-repo/private-vulnerability-reporting":
+            raise RuntimeError("gh: 403")
+        raise AssertionError(f"unexpected path {path}")
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+
+    result = audit._gather_facts(tmp_path, use_api=True)
+
+    assert result["repo_settings"] == {"private": True}
+    assert result["ruleset"] == {"enforcement": "active"}
+    assert result["automated_security_fixes"] == {"enabled": True, "paused": False}
+    assert result["private_vulnerability_reporting"] is None
 
 
 def test_gather_facts_reads_each_workflow_file_pyproject_and_tracked_files_exactly_once(
@@ -1190,6 +1342,98 @@ def test_actions_pinned_to_full_sha_with_version_comment_ignores_uses_inside_pro
         "          echo 'Update `uses: astral-sh/setup-uv@...` in the docs.'\n",
     )
     assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
+
+
+# --- pinact_verify_runs_on_pull_request -----------------------------------------------------
+
+
+def test_pinact_verify_runs_on_pull_request_passes_when_a_pull_request_workflow_verifies(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\njobs:\n  checks:\n    steps:\n"
+        "      - uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a"
+        " # v3.0.0\n"
+        "        with:\n"
+        '          verify: "true"\n',
+    )
+    assert audit.pinact_verify_runs_on_pull_request(tmp_path, facts()) is None
+
+
+def test_pinact_verify_runs_on_pull_request_fails_when_no_workflow_triggers_on_pull_request(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  push:\njobs:\n  checks:\n    steps:\n"
+        "      - uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a"
+        " # v3.0.0\n"
+        "        with:\n"
+        '          verify: "true"\n',
+    )
+    assert audit.pinact_verify_runs_on_pull_request(tmp_path, facts()) is not None
+
+
+def test_pinact_verify_runs_on_pull_request_fails_when_the_step_is_missing(tmp_path) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\njobs:\n  checks:\n    steps:\n"
+        "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+    )
+    assert audit.pinact_verify_runs_on_pull_request(tmp_path, facts()) is not None
+
+
+def test_pinact_verify_runs_on_pull_request_fails_when_verify_is_not_true(tmp_path) -> None:
+    workflow(
+        tmp_path,
+        "on:\n  pull_request:\njobs:\n  checks:\n    steps:\n"
+        "      - uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a"
+        " # v3.0.0\n"
+        "        with:\n"
+        '          fix: "true"\n'
+        '          verify: "false"\n',
+    )
+    assert audit.pinact_verify_runs_on_pull_request(tmp_path, facts()) is not None
+
+
+# --- zizmor_runs_in_precommit_or_ci ----------------------------------------------------------
+
+
+def test_zizmor_runs_in_precommit_or_ci_passes_with_the_pre_commit_hook(tmp_path) -> None:
+    write(
+        tmp_path,
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/woodruffw/zizmor-pre-commit\n"
+        "    rev: v1.30.1\n    hooks:\n      - id: zizmor\n",
+    )
+    assert audit.zizmor_runs_in_precommit_or_ci(tmp_path, facts()) is None
+
+
+def test_zizmor_runs_in_precommit_or_ci_passes_with_a_ci_step(tmp_path) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  checks:\n    steps:\n      - run: uvx zizmor .\n",
+    )
+    assert audit.zizmor_runs_in_precommit_or_ci(tmp_path, facts()) is None
+
+
+def test_zizmor_runs_in_precommit_or_ci_fails_when_neither_is_configured(tmp_path) -> None:
+    write(tmp_path, ".pre-commit-config.yaml", "repos:\n  - repo: https://example.com/ruff\n")
+    workflow(tmp_path, "jobs:\n  checks:\n    steps:\n      - run: echo hi\n")
+    assert audit.zizmor_runs_in_precommit_or_ci(tmp_path, facts()) is not None
+
+
+def test_zizmor_runs_in_precommit_or_ci_ignores_a_mention_that_is_not_the_hook_id(
+    tmp_path,
+) -> None:
+    """A comment that merely mentions zizmor is not the `- id: zizmor` hook itself."""
+    write(
+        tmp_path,
+        ".pre-commit-config.yaml",
+        "# zizmor runs in CI instead of here\nrepos:\n  - repo: https://example.com/ruff\n",
+    )
+    assert audit.zizmor_runs_in_precommit_or_ci(tmp_path, facts()) is not None
 
 
 def test_no_expression_interpolation_in_run_steps_passes_when_env_carries_the_value(
@@ -1887,6 +2131,60 @@ def test_readme_security_section_is_never_only_fails_when_a_checked_item_appears
     assert audit.readme_security_section_is_never_only(tmp_path, facts()) is not None
 
 
+# --- readme_check_exec_flag_is_true ----------------------------------------------------------
+
+
+def test_readme_check_exec_flag_is_true_passes_when_the_workflow_is_missing(tmp_path) -> None:
+    assert audit.readme_check_exec_flag_is_true(tmp_path, facts()) is None
+
+
+def test_readme_check_exec_flag_is_true_passes_when_readmerlin_is_not_used(tmp_path) -> None:
+    write(
+        tmp_path,
+        ".github/workflows/readme-check.yml",
+        "jobs:\n  readmerlin:\n    steps:\n"
+        "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+    )
+    assert audit.readme_check_exec_flag_is_true(tmp_path, facts()) is None
+
+
+def test_readme_check_exec_flag_is_true_passes_when_exec_is_true(tmp_path) -> None:
+    write(
+        tmp_path,
+        ".github/workflows/readme-check.yml",
+        "jobs:\n  readmerlin:\n    steps:\n"
+        "      - uses: oficiallyAkshay/readmerlin@63f78b5379bcdeff23a443ecf165ceb43544eebb"
+        " # v1.0.2\n"
+        "        with:\n"
+        '          exec: "true"\n',
+    )
+    assert audit.readme_check_exec_flag_is_true(tmp_path, facts()) is None
+
+
+def test_readme_check_exec_flag_is_true_fails_when_exec_is_missing(tmp_path) -> None:
+    write(
+        tmp_path,
+        ".github/workflows/readme-check.yml",
+        "jobs:\n  readmerlin:\n    steps:\n"
+        "      - uses: oficiallyAkshay/readmerlin@63f78b5379bcdeff23a443ecf165ceb43544eebb"
+        " # v1.0.2\n",
+    )
+    assert audit.readme_check_exec_flag_is_true(tmp_path, facts()) is not None
+
+
+def test_readme_check_exec_flag_is_true_fails_when_exec_is_false(tmp_path) -> None:
+    write(
+        tmp_path,
+        ".github/workflows/readme-check.yml",
+        "jobs:\n  readmerlin:\n    steps:\n"
+        "      - uses: oficiallyAkshay/readmerlin@63f78b5379bcdeff23a443ecf165ceb43544eebb"
+        " # v1.0.2\n"
+        "        with:\n"
+        '          exec: "false"\n',
+    )
+    assert audit.readme_check_exec_flag_is_true(tmp_path, facts()) is not None
+
+
 def test_no_lockfile_committed_passes_without_a_lockfile(tmp_path) -> None:
     assert audit.no_lockfile_committed(tmp_path, facts()) is None
 
@@ -1915,6 +2213,70 @@ def test_no_lockfile_committed_fails_when_a_lockfile_is_tracked_by_git(tmp_path)
     subprocess.run(["git", "commit", "-q", "-m", "Add uv.lock"], cwd=tmp_path, check=True)
 
     assert audit.no_lockfile_committed(tmp_path, facts()) is not None
+
+
+# --- only_clonometer_pushes_to_badges_branch --------------------------------------------------
+
+
+def test_only_clonometer_pushes_to_badges_branch_passes_with_no_badges_push_at_all(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+        "      - run: uv run pytest\n",
+    )
+    assert audit.only_clonometer_pushes_to_badges_branch(tmp_path, facts()) is None
+
+
+def test_only_clonometer_pushes_to_badges_branch_exempts_a_workflow_that_uses_clonometer(
+    tmp_path,
+) -> None:
+    """Exempt by file, per the rule text: this workflow's own git commands never matter."""
+    workflow(
+        tmp_path,
+        "jobs:\n  badges:\n    steps:\n"
+        "      - uses: oficiallyAkshay/clonometer@2c82a8779a68d2babb1e5e856d2ae69253dcd611"
+        " # v1\n"
+        "      - run: git push origin HEAD:badges\n",
+    )
+    assert audit.only_clonometer_pushes_to_badges_branch(tmp_path, facts()) is None
+
+
+def test_only_clonometer_pushes_to_badges_branch_fails_on_a_head_colon_badges_push(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+        "      - run: git push origin HEAD:badges\n",
+    )
+    result = audit.only_clonometer_pushes_to_badges_branch(tmp_path, facts())
+    assert result is not None
+    file_, _message = result
+    assert file_ == ".github/workflows/ci.yml"
+
+
+def test_only_clonometer_pushes_to_badges_branch_fails_on_git_init_dash_b_badges(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - run: git init -b badges\n",
+    )
+    assert audit.only_clonometer_pushes_to_badges_branch(tmp_path, facts()) is not None
+
+
+def test_only_clonometer_pushes_to_badges_branch_fails_on_a_forced_push_to_badges(
+    tmp_path,
+) -> None:
+    workflow(
+        tmp_path,
+        "jobs:\n  build:\n    steps:\n      - run: git push --force origin badges\n",
+    )
+    assert audit.only_clonometer_pushes_to_badges_branch(tmp_path, facts()) is not None
 
 
 def test_no_001_does_not_fire_on_a_javascript_repo_with_a_committed_package_lock(
@@ -2447,32 +2809,87 @@ def test_copilot_autofix_for_codeql_enabled_fails_when_security_and_analysis_is_
     )
 
 
-def test_no_private_vulnerability_reporting_passes_when_disabled(tmp_path) -> None:
-    settings = {
-        "security_and_analysis": {"private_vulnerability_reporting": {"status": "disabled"}}
-    }
-    assert audit.no_private_vulnerability_reporting(tmp_path, facts(repo_settings=settings)) is None
+def test_security_reporting_route_passes_with_no_security_md_at_all(tmp_path) -> None:
+    assert audit.security_reporting_route_must_be_on(tmp_path, facts()) is None
 
 
-def test_no_private_vulnerability_reporting_fails_when_repo_settings_are_unavailable(
+def test_security_reporting_route_passes_when_security_md_is_a_symlink(tmp_path) -> None:
+    """`_read_text` refuses a symlink, the same as every other probe that reads a doc file."""
+    target = write(tmp_path, "elsewhere.md", "security/advisories\n")
+    (tmp_path / "SECURITY.md").symlink_to(target)
+    assert audit.security_reporting_route_must_be_on(tmp_path, facts()) is None
+
+
+def test_security_reporting_route_passes_when_security_md_never_mentions_the_route(
     tmp_path,
 ) -> None:
-    assert audit.no_private_vulnerability_reporting(tmp_path, facts()) is not None
+    write(tmp_path, "SECURITY.md", "# Security\n\nEmail us at security@example.com.\n")
+    assert audit.security_reporting_route_must_be_on(tmp_path, facts()) is None
 
 
-def test_no_private_vulnerability_reporting_fails_when_enabled(tmp_path) -> None:
-    settings = {"security_and_analysis": {"private_vulnerability_reporting": {"status": "enabled"}}}
-    assert (
-        audit.no_private_vulnerability_reporting(tmp_path, facts(repo_settings=settings))
-        is not None
+def test_security_reporting_route_passes_when_the_route_is_on(tmp_path) -> None:
+    write(
+        tmp_path,
+        "SECURITY.md",
+        "Use https://github.com/an-owner/a-repo/security/advisories/new\n",
     )
+    result_facts = facts(private_vulnerability_reporting={"enabled": True})
+    assert audit.security_reporting_route_must_be_on(tmp_path, result_facts) is None
 
 
-def test_no_private_vulnerability_reporting_passes_when_security_and_analysis_is_null(
+def test_security_reporting_route_matches_the_phrase_private_vulnerability_reporting_too(
     tmp_path,
 ) -> None:
-    settings = {"security_and_analysis": None}
-    assert audit.no_private_vulnerability_reporting(tmp_path, facts(repo_settings=settings)) is None
+    write(tmp_path, "SECURITY.md", "Use GitHub's Private Vulnerability Reporting.\n")
+    result_facts = facts(private_vulnerability_reporting={"enabled": True})
+    assert audit.security_reporting_route_must_be_on(tmp_path, result_facts) is None
+
+
+def test_security_reporting_route_fails_when_the_route_is_off(tmp_path) -> None:
+    write(
+        tmp_path,
+        "SECURITY.md",
+        "Use https://github.com/an-owner/a-repo/security/advisories/new\n",
+    )
+    result_facts = facts(private_vulnerability_reporting={"enabled": False})
+
+    result = audit.security_reporting_route_must_be_on(tmp_path, result_facts)
+
+    assert result is not None
+    file_, message = result
+    assert file_ == "SECURITY.md"
+    assert "off" in message
+
+
+def test_security_reporting_route_checks_github_slash_security_md_too(tmp_path) -> None:
+    write(
+        tmp_path,
+        ".github/SECURITY.md",
+        "Use https://github.com/an-owner/a-repo/security/advisories/new\n",
+    )
+    result_facts = facts(private_vulnerability_reporting={"enabled": False})
+
+    result = audit.security_reporting_route_must_be_on(tmp_path, result_facts)
+
+    assert result is not None
+    file_, _message = result
+    assert file_ == ".github/SECURITY.md"
+
+
+def test_security_reporting_route_records_itself_unverified_when_the_api_call_failed(
+    tmp_path,
+) -> None:
+    write(
+        tmp_path,
+        "SECURITY.md",
+        "Use https://github.com/an-owner/a-repo/security/advisories/new\n",
+    )
+    result_facts = facts()
+
+    result = audit.security_reporting_route_must_be_on(tmp_path, result_facts)
+
+    assert result is None
+    assert result_facts["unverified_probes"] == {"security_reporting_route_must_be_on"}
 
 
 GOOD_RULESET = {
