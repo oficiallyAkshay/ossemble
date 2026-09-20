@@ -7,6 +7,7 @@
 <p align="center"><img alt="ossemble takes a need or an existing repo, runs secrets scanning, pinned actions, coverage gates and rule audits on it, and hands back a repo a stranger can trust" src="assets/readme/hero.svg" width="900"></p>
 
 <p align="center">
+  <a href="https://codecov.io/gh/oficiallyAkshay/ossemble"><img alt="coverage" src="https://img.shields.io/codecov/c/github/oficiallyAkshay/ossemble?logo=codecov&logoColor=white"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/license-MIT-2f6f4e?logo=opensourceinitiative&logoColor=white"></a>
   <a href="pyproject.toml"><img alt="Python 3.11 or newer" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="pyproject.toml"><img alt="zero runtime dependencies" src="https://img.shields.io/badge/dependencies-0-2f6f4e"></a>
