@@ -12,7 +12,9 @@
       "HRD-005  .github/workflows/check-dist.yml",
       "HRD-006  .github/workflows/test.yml",
       "HRD-007  .pre-commit-config.yaml",
-      "HRD-008  .github/dependabot.yml"
+      "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows",
+      "HRD-015  .github/workflows"
     ]
   },
   {
@@ -37,7 +39,8 @@
       "HRD-004  .github/workflows/update-docs.yml",
       "HRD-006  .github/workflows/test.yml",
       "HRD-007  .pre-commit-config.yaml",
-      "HRD-008  .github/dependabot.yml"
+      "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows"
     ]
   },
   {
@@ -57,6 +60,7 @@
       "HRD-003  .github/workflows/build-docset.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows",
       "PRV-001  .",
       "STR-001  pyproject.toml",
       "STR-002  pyproject.toml",
@@ -89,7 +93,9 @@
       "HRD-005  .github/workflows/scorecards.yml",
       "HRD-006  .github/workflows/tests.yaml",
       "HRD-007  .pre-commit-config.yaml",
-      "HRD-008  .github/dependabot.yml"
+      "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows",
+      "HRD-015  .github/workflows"
     ]
   },
   {
@@ -103,6 +109,7 @@
       "HRD-003  .github/workflows/create_tests_package_lists.yml",
       "HRD-006  .github/workflows/create_tests_package_lists.yml",
       "HRD-007  .pre-commit-config.yaml",
+      "HRD-014  .github/workflows",
       "NO-001  uv.lock",
       "NO-003  .github/workflows/pre-release.yml",
       "STR-001  pyproject.toml",
@@ -120,6 +127,7 @@
       "HRD-003  .github/workflows/build-docset.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows",
       "NO-001  uv.lock",
       "STR-002  pyproject.toml",
       "TST-001  pyproject.toml"
@@ -137,6 +145,8 @@
       "HRD-004  .github/workflows/release.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows",
+      "HRD-015  .github/workflows",
       "PRV-001  ."
     ]
   },
@@ -153,6 +163,8 @@
       "HRD-005  .github/workflows/canary.yml",
       "HRD-007  .github/workflows",
       "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows",
+      "HRD-015  .github/workflows",
       "NO-003  .github/workflows/canary.yml",
       "PRV-001  ."
     ]
@@ -170,7 +182,9 @@
       "HRD-005  .github/workflows/agent-skills-discovery.yml",
       "HRD-006  .github/workflows/agent-skills-discovery.yml",
       "HRD-007  .pre-commit-config.yaml",
-      "HRD-008  .github/dependabot.yml"
+      "HRD-008  .github/dependabot.yml",
+      "HRD-014  .github/workflows",
+      "HRD-015  .github/workflows"
     ]
   },
   {
@@ -181,6 +195,7 @@
       "HRD-002  .github/workflows/benchmark.yml",
       "HRD-003  .github/workflows/benchmark.yml",
       "HRD-007  .pre-commit-config.yaml",
+      "HRD-014  .github/workflows",
       "NO-001  uv.lock",
       "PRV-001  .",
       "STR-002  pyproject.toml",
