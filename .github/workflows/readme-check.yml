@@ -1,0 +1,28 @@
+name: readme check
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 9 * * 1"
+
+permissions: {}
+
+# A second push to a pull request supersedes the first, so cancel the run it
+# replaced. Pushes to main key on the commit instead, so a rapid second push
+# gets its own group rather than dropping the first push's run.
+concurrency:
+  group: readme-check-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  readmerlin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oficiallyAkshay/readmerlin@ded49f27b3c6800c59d1ed3b3bf756c5f1bc9f00   # a commit of main; init-workflow fills it in
