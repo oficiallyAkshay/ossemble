@@ -34,7 +34,7 @@ ossemble takes a scope with nothing built yet, or a repo that already exists, an
 
 ## In action
 
-[`tests/eval/consumers.py`](tests/eval/consumers.py) clones thirteen pinned public repos and checks the rows it prints against [`tests/eval/consumers.json`](tests/eval/consumers.json), the stored answer key, so a probe that starts or stops flagging something real shows up as a diff. Against [actions/checkout](https://github.com/actions/checkout), the audit finds ten real gaps, from an unpinned action reference to a Dependabot config with no weekly cooldown.
+[`tests/eval/consumers.py`](tests/eval/consumers.py) clones thirteen pinned public repos and checks the rows it prints against [`tests/eval/consumers.json`](tests/eval/consumers.json), the stored answer key, so a probe that starts or stops flagging something real shows up as a diff. Against [actions/checkout](https://github.com/actions/checkout), the audit finds twelve real gaps, from an unpinned action reference to a Dependabot config with no weekly cooldown.
 
 ## Fit
 

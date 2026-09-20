@@ -2,14 +2,14 @@
 
 Read by the model at build-runbook step 6 (tighten) and step 10 (recommend) to pick tools per repo. This table is data the model reads, not code the audit runs; `audit` only checks that a picked tool is configured and sitting at its finish value.
 
-A few rows are always on whenever their trigger exists in the repo being built, not opt-in per language: a secrets scan, and workflow lint, workflow security and pin verification whenever any workflow file exists. (HRD-007, HRD-005) Everything else is a Python pick, a public-only pick, or an explicit owner recommendation from build-runbook step 10. A public-only pick's own workflow carries a job-level `github.event.repository.visibility != 'private'` guard, written as a negative so a missing context runs rather than silently skips, so it can be stamped before the repo is public and starts working on its own at the flip.
+A few rows are always on whenever their trigger exists in the repo being built, not opt-in per language: a secrets scan, and workflow lint, workflow security and pin verification whenever any workflow file exists. (HRD-007, HRD-005, HRD-014, HRD-015) Everything else is a Python pick, a public-only pick, or an explicit owner recommendation from build-runbook step 10. A public-only pick's own workflow carries a job-level `github.event.repository.visibility != 'private'` guard, written as a negative so a missing context runs rather than silently skips, so it can be stamped before the repo is public and starts working on its own at the flip.
 
 | Tool | Applies when | Cost | Always or conditional | Stage |
 | --- | --- | --- | --- | --- |
 | gitleaks | any repo, full history (HRD-007) | free | always | build, day zero |
-| pinact | any workflow file exists (HRD-005) | free | always once a workflow exists | build, day zero |
+| pinact, pin format plus a `verify: "true"` step on pull requests | any workflow file exists (HRD-005, HRD-014) | free | always once a workflow exists | build, day zero |
 | actionlint | any workflow file exists | free | always once a workflow exists | build, day zero |
-| zizmor | any workflow file exists | free | always once a workflow exists | build, day zero |
+| zizmor, pre-commit hook or CI step | any workflow file exists (HRD-015) | free | always once a workflow exists | build, day zero |
 | ruff (`select = ["ALL"]` at finish) (HRD-009) | Python detected | free | conditional, Python pick | build (default rules), finish (full set) |
 | ty (Astral's type checker) | Python detected | free | conditional, Python pick, adopted | finish |
 | vulture, with a name whitelist for fixtures | Python detected | free | conditional, Python pick | finish |
