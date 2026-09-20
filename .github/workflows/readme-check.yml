@@ -28,6 +28,6 @@ jobs:
       # exec runs the count-source commands from readmerlin.json (here,
       # tomllib against pyproject.toml) so every count badge is verified on
       # every push, not just parsed as a static string.
-      - uses: oficiallyAkshay/readmerlin@63f78b5379bcdeff23a443ecf165ceb43544eebb # v1.0.2
+      - uses: oficiallyAkshay/readmerlin@df3c48aac7de0d30b21a0617e850c884731052b1 # v1.1.0
         with:
           exec: "true"
