@@ -5,6 +5,7 @@ A probe returns `None` when its rule holds, else an `(file, message)` gap.
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import json
 import re
@@ -130,8 +131,15 @@ def _validate_rules(rules: list[dict]) -> None:
 
 def _score(
     root: Path, facts: dict, rules: list[dict], *, use_api: bool
-) -> tuple[list[dict], list[dict]]:
-    """Evaluate `rules` against `root`/`facts`, returning (gaps, recommendations)."""
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Evaluate `rules` against `root`/`facts`, returning (gaps, recommendations, unverified).
+
+    `unverified` names the rule ids whose probe could not reach a verdict
+    this run, meaning it depends on `--api` data an unauthenticated or
+    missing `gh` never supplied. Never a gap by itself: a probe that finds
+    itself unverified records that in `facts["unverified_probes"]` (by
+    its own function name) rather than returning a row.
+    """
     _validate_rules(rules)
     gaps: list[dict[str, str]] = []
     recommendations: list[dict[str, str]] = []
@@ -170,7 +178,11 @@ def _score(
 
     gaps.sort(key=lambda row: row["id"])
     recommendations.sort(key=lambda row: row["id"])
-    return gaps, recommendations
+    unverified_probe_names = facts.get("unverified_probes") or set()
+    unverified_ids = sorted(
+        rule["id"] for rule in rules if rule.get("probe") in unverified_probe_names
+    )
+    return gaps, recommendations, unverified_ids
 
 
 def gaps(root: Path, *, use_api: bool = False) -> list[dict]:
@@ -178,7 +190,7 @@ def gaps(root: Path, *, use_api: bool = False) -> list[dict]:
     root = Path(root).resolve()
     rules = _load_rules()
     facts = _gather_facts(root, use_api=use_api)
-    gap_rows, _recommendations = _score(root, facts, rules, use_api=use_api)
+    gap_rows, _recommendations, _unverified = _score(root, facts, rules, use_api=use_api)
     return gap_rows
 
 
@@ -207,24 +219,49 @@ def run(args: argparse.Namespace) -> int:
 
     facts = _gather_facts(root, use_api=args.api)
     try:
-        gap_rows, recommendation_rows = _score(root, facts, rules, use_api=args.api)
+        gap_rows, recommendation_rows, unverified_ids = _score(root, facts, rules, use_api=args.api)
     except _RuleError as exc:
         print(f"ossemble audit: {exc}", file=sys.stderr)
         return 1
 
-    if args.as_json:
-        print(json.dumps(gap_rows, indent=2, sort_keys=True))
-    else:
-        for row in gap_rows:
-            print(f"{row['id']}  {row['kind']}  {row['stage']}  {row['file']}  {row['message']}")
-        if recommendation_rows:
-            print("Recommendations")
-            for row in recommendation_rows:
-                print(
-                    f"{row['id']}  {row['kind']}  {row['stage']}  {row['file']}  {row['message']}"
-                )
+    _print_report(gap_rows, recommendation_rows, unverified_ids, as_json=args.as_json, api=args.api)
 
     return 1 if gap_rows else 0
+
+
+def _print_report(
+    gap_rows: list[dict],
+    recommendation_rows: list[dict],
+    unverified_ids: list[str],
+    *,
+    as_json: bool,
+    api: bool,
+) -> None:
+    """Print `audit`'s report, as the gap table or, with `as_json`, JSON."""
+    if as_json:
+        # Only `--api` can leave a rule unverified (an `audit`-check rule
+        # always reaches a verdict from the tree alone), so the plain
+        # `--json` shape consumers already parse as a bare list never
+        # changes; `--api --json` nests it so the unverified ids have
+        # somewhere to go.
+        if api:
+            print(
+                json.dumps(
+                    {"gaps": gap_rows, "unverified": unverified_ids}, indent=2, sort_keys=True
+                )
+            )
+        else:
+            print(json.dumps(gap_rows, indent=2, sort_keys=True))
+        return
+
+    for row in gap_rows:
+        print(f"{row['id']}  {row['kind']}  {row['stage']}  {row['file']}  {row['message']}")
+    if recommendation_rows:
+        print("Recommendations")
+        for row in recommendation_rows:
+            print(f"{row['id']}  {row['kind']}  {row['stage']}  {row['file']}  {row['message']}")
+    if unverified_ids:
+        print(f"Unverified: {', '.join(unverified_ids)}")
 
 
 # --------------------------------------------------------------------- facts
@@ -243,6 +280,7 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
         "repo_settings": None,
         "ruleset": None,
         "automated_security_fixes": None,
+        "private_vulnerability_reporting": None,
         "workflow_items": workflow_items,
         "pyproject": pyproject,
         "tracked_files": tracked_files,
@@ -264,6 +302,15 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
                 )
             except (RuntimeError, OSError, json.JSONDecodeError, KeyError):
                 pass
+            # Kept in its own suppress: a repo with no ruleset or automated
+            # security fixes endpoint (both caught above) must not also
+            # blank this fact, and this endpoint's own failure (gh missing,
+            # unauthenticated, a 403 on a fine-grained token without
+            # Administration) must not blank those.
+            with contextlib.suppress(RuntimeError, OSError, json.JSONDecodeError, KeyError):
+                facts["private_vulnerability_reporting"] = cast(
+                    "dict", _gh_api(f"repos/{owner_repo}/private-vulnerability-reporting")
+                )
     return facts
 
 
@@ -608,6 +655,40 @@ def actions_pinned_to_full_sha_with_version_comment(root: Path, facts: dict) -> 
     return None
 
 
+def pinact_verify_runs_on_pull_request(root: Path, facts: dict) -> ProbeResult:
+    """Run `pinact-action` with `verify: "true"` in some CI workflow triggered on pull_request."""
+    for _path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
+        if "pull_request" not in _on_triggers(text):
+            continue
+        for step in _steps(text):
+            if "suzuki-shunsuke/pinact-action@" not in step:
+                continue
+            if re.search(r"verify:\s*[\"']?true[\"']?", step):
+                return None
+    return (
+        ".github/workflows",
+        'no pull_request workflow runs suzuki-shunsuke/pinact-action with verify: "true"',
+    )
+
+
+_ZIZMOR_PRECOMMIT_HOOK = re.compile(r"^[ \t]*-[ \t]*id:[ \t]*zizmor[ \t]*$", re.MULTILINE)
+
+
+def zizmor_runs_in_precommit_or_ci(root: Path, facts: dict) -> ProbeResult:
+    """Run zizmor, either as a pre-commit hook or as a CI step."""
+    pre_commit = _read_text(root / ".pre-commit-config.yaml") or ""
+    if _ZIZMOR_PRECOMMIT_HOOK.search(pre_commit):
+        return None
+    for _path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
+        for step in _steps(text):
+            if "zizmor" in step.lower():
+                return None
+    return (
+        ".github/workflows",
+        "zizmor does not run as a pre-commit hook (id: zizmor) or a CI step",
+    )
+
+
 def no_expression_interpolation_in_run_steps(root: Path, facts: dict) -> ProbeResult:
     """Never put `${{ }}` inside a `run:` step; pass the value through `env:` instead."""
     for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
@@ -899,6 +980,23 @@ def readme_security_section_is_never_only(root: Path, _facts: dict) -> ProbeResu
     return None
 
 
+def readme_check_exec_flag_is_true(root: Path, _facts: dict) -> ProbeResult:
+    """When readme-check.yml runs `oficiallyAkshay/readmerlin`, its `exec` input must be true."""
+    path = root / ".github" / "workflows" / "readme-check.yml"
+    text = _read_text(path)
+    if text is None:
+        return None
+    for step in _steps(text):
+        if "oficiallyAkshay/readmerlin" not in step:
+            continue
+        if not re.search(r"exec:\s*[\"']?true[\"']?", step):
+            return (
+                ".github/workflows/readme-check.yml",
+                'the readmerlin step does not set exec: "true"',
+            )
+    return None
+
+
 def no_lockfile_committed(root: Path, facts: dict) -> ProbeResult:
     """Never commit a lockfile."""
     tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
@@ -907,6 +1005,32 @@ def no_lockfile_committed(root: Path, facts: dict) -> ProbeResult:
             continue
         if tracked is None or name in tracked:
             return (name, "a lockfile is committed")
+    return None
+
+
+_BADGES_BRANCH_PATTERN = re.compile(
+    r"HEAD:badges\b"
+    r"|refs/heads/badges\b"
+    r"|git\s+init\s+-b\s+badges\b"
+    r"|git\s+push\b.*\bbadges\b"
+    r"|--force\b.*\bbadges\b"
+    r"|\bbadges\b.*--force\b",
+    re.DOTALL,
+)
+
+
+def only_clonometer_pushes_to_badges_branch(root: Path, facts: dict) -> ProbeResult:
+    """Never push to the `badges` branch from a workflow other than `oficiallyAkshay/clonometer`."""
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
+        if "oficiallyAkshay/clonometer@" in text:
+            continue
+        for step in _steps(text):
+            run_value = _run_value(step)
+            if run_value and _BADGES_BRANCH_PATTERN.search(run_value):
+                return (
+                    str(path.relative_to(root)),
+                    "pushes to the badges branch outside oficiallyAkshay/clonometer",
+                )
     return None
 
 
@@ -1143,15 +1267,39 @@ def copilot_autofix_for_codeql_enabled(_root: Path, facts: dict) -> ProbeResult:
     return None
 
 
-def no_private_vulnerability_reporting(_root: Path, facts: dict) -> ProbeResult:
-    """Never turn on private vulnerability reporting."""
-    settings = facts.get("repo_settings")
-    if settings is None:
-        return ("gh api repos", "could not read repo settings")
-    analysis = settings.get("security_and_analysis") or {}
-    status = analysis.get("private_vulnerability_reporting", {}).get("status")
-    if status == "enabled":
-        return ("gh api repos", "private vulnerability reporting is enabled")
+def _security_md_path(root: Path) -> Path | None:
+    for candidate in (root / "SECURITY.md", root / ".github" / "SECURITY.md"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def security_reporting_route_must_be_on(root: Path, facts: dict) -> ProbeResult:
+    """When SECURITY.md points to private vulnerability reporting, that setting must be on.
+
+    Never a false row: a `gh` that is missing, unauthenticated, or fails
+    for any other reason leaves `facts["private_vulnerability_reporting"]`
+    `None`, and that is recorded as unverified (`facts["unverified_probes"]`)
+    rather than reported as a gap.
+    """
+    path = _security_md_path(root)
+    if path is None:
+        return None
+    text = _read_text(path)
+    if text is None:
+        return None
+    lowered = text.lower()
+    if "security/advisories" not in lowered and "private vulnerability reporting" not in lowered:
+        return None
+    status = facts.get("private_vulnerability_reporting")
+    if status is None:
+        facts.setdefault("unverified_probes", set()).add("security_reporting_route_must_be_on")
+        return None
+    if not status.get("enabled"):
+        return (
+            str(path.relative_to(root)),
+            "points reporters at private vulnerability reporting, but the setting is off",
+        )
     return None
 
 
@@ -1232,7 +1380,11 @@ PROBES = {
         readme_has_no_ci_badge_code_or_workflow_link_before_content,
         readme_headings_are_only_the_fixed_set,
         readme_security_section_is_never_only,
+        readme_check_exec_flag_is_true,
+        pinact_verify_runs_on_pull_request,
+        zizmor_runs_in_precommit_or_ci,
         no_lockfile_committed,
+        only_clonometer_pushes_to_badges_branch,
         zero_tokens_beyond_builtin_github_token,
         commit_identity_is_noreply,
         state_file_holds_only_allowed_keys,
@@ -1247,7 +1399,7 @@ PROBES = {
         topics_are_set,
         secret_scanning_and_push_protection_enabled,
         copilot_autofix_for_codeql_enabled,
-        no_private_vulnerability_reporting,
+        security_reporting_route_must_be_on,
         ruleset_requires_ci_check,
         ruleset_blocks_history_rewrites,
         ruleset_never_requires_reviews_or_thread_resolution,

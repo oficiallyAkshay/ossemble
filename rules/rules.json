@@ -202,6 +202,16 @@
     "check": "judgment"
   },
   {
+    "id": "DOC-009",
+    "text": "When `.github/workflows/readme-check.yml` uses `oficiallyAkshay/readmerlin`, its `exec` input must be `\"true\"`.",
+    "basis": "7 repos needed the flag flipped by hand on 2026-09-20",
+    "category": "readme and brand",
+    "kind": "default",
+    "stage": "finish",
+    "check": "audit",
+    "probe": "readme_check_exec_flag_is_true"
+  },
+  {
     "id": "DST-001",
     "text": "Recommend packaging only when a named consumer runs `pip install` or `npx` for a reason that is not a download counter.",
     "basis": "prompt section 2, packaging",
@@ -400,6 +410,32 @@
     "check": "judgment"
   },
   {
+    "id": "HRD-014",
+    "text": "Run `suzuki-shunsuke/pinact-action` with `verify: \"true\"` in some CI workflow triggered on pull_request.",
+    "basis": "4 repos passed the audit on 2026-09-20 without either, and pinact then caught a real bad pin comment in 2 others",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "pinact_verify_runs_on_pull_request"
+  },
+  {
+    "id": "HRD-015",
+    "text": "Run zizmor, either as a pre-commit hook or as a CI step.",
+    "basis": "4 repos passed the audit on 2026-09-20 without either, and pinact then caught a real bad pin comment in 2 others",
+    "category": "hardening",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "zizmor_runs_in_precommit_or_ci"
+  },
+  {
     "id": "NO-001",
     "text": "Never commit a lockfile; binds Python repos only, since the basis is uv resolving a Python dev group.",
     "basis": "what the 2026-09-18 prompt changes: unchanged and restated; things I have said no to",
@@ -414,7 +450,7 @@
   },
   {
     "id": "NO-002",
-    "text": "ossemble never stamps a SECURITY.md and never recommends private vulnerability reporting; a repo that has one keeps it.",
+    "text": "ossemble never stamps a SECURITY.md; a repo that has one keeps it.",
     "basis": "owner decision item 12: none at all, not stamped, not a default",
     "category": "the no-list",
     "kind": "default",
@@ -500,13 +536,26 @@
   },
   {
     "id": "NO-011",
-    "text": "Never turn on private vulnerability reporting.",
-    "basis": "owner decision item 3",
+    "text": "When SECURITY.md points reporters at GitHub private vulnerability reporting, that setting must be on; never publish a reporting route that is off.",
+    "basis": "3 repos found on 2026-09-20 with the route off, a 404 for a reporter",
     "category": "the no-list",
     "kind": "default",
     "stage": "build",
     "check": "api",
-    "probe": "no_private_vulnerability_reporting"
+    "probe": "security_reporting_route_must_be_on"
+  },
+  {
+    "id": "NO-012",
+    "text": "Never push to a branch named `badges` from any workflow other than one that `uses: oficiallyAkshay/clonometer`.",
+    "basis": "2 ledgers wiped on 2026-09-20 (pierless earlier, boomerang) by a coverage badge job force-pushing an orphan badges branch",
+    "category": "the no-list",
+    "kind": "default",
+    "stage": "build",
+    "check": "audit",
+    "when": {
+      "has_workflows": true
+    },
+    "probe": "only_clonometer_pushes_to_badges_branch"
   },
   {
     "id": "PRC-001",
