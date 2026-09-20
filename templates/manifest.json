@@ -224,10 +224,12 @@
     "when": null,
     "vars": [
       "NAME",
-      "COVERAGE_FLOOR"
+      "COVERAGE_FLOOR",
+      "VERSION"
     ],
     "defaults": {
-      "COVERAGE_FLOOR": "70"
+      "COVERAGE_FLOOR": "70",
+      "VERSION": "0.1.0"
     },
     "rules": [
       "STR-001",
@@ -241,8 +243,12 @@
     "set": "finish",
     "when": null,
     "vars": [
-      "NAME"
+      "NAME",
+      "VERSION"
     ],
+    "defaults": {
+      "VERSION": "0.1.0"
+    },
     "rules": [
       "HRD-009",
       "STR-002",
