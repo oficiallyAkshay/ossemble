@@ -21,6 +21,12 @@ def _this_repos_coverage_floor() -> str:
     return str(data["tool"]["coverage"]["report"]["fail_under"])
 
 
+def _this_repos_version() -> str:
+    """Read this repo's own live version, so a release bump needs no test edit."""
+    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(data["project"]["version"])
+
+
 def _make_args(*, path=".", set_name="boot", variables=None, check=False) -> argparse.Namespace:
     return argparse.Namespace(
         path=path, set_name=set_name, variables=list(variables or []), check=check
@@ -644,7 +650,8 @@ class TestRealTemplatesMatchThisRepo:
 
     def test_scaffold_reproduces_this_repos_own_gate_files_byte_for_byte(self, tmp_path) -> None:
         floor = _this_repos_coverage_floor()
-        variables = ["NAME=ossemble"]
+        version = _this_repos_version()
+        variables = ["NAME=ossemble", f"VERSION={version}"]
 
         boot_exit = scaffold.run(
             _make_args(
