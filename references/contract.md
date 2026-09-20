@@ -39,7 +39,7 @@ Rules for every subcommand:
 
 ### Gap table
 
-`audit` prints one row per failed rule, sorted by id, columns separated by two spaces: `ID  KIND  STAGE  FILE  MESSAGE`. With `--json` it prints a list of objects with the keys `id`, `kind`, `stage`, `file`, `message`. A missing default is a gap and sets exit 1. A missing recommendation is printed under a second heading, `Recommendations`, and never changes the exit code.
+`audit` prints one row per failed rule, sorted by id, columns separated by two spaces: `ID  KIND  STAGE  FILE  MESSAGE`. With `--json` it prints a list of objects with the keys `id`, `kind`, `stage`, `file`, `message`; with `--json --api` it instead prints one object, `{"gaps": [...], "unverified": [...]}`, since only `--api` can leave an api-check rule's probe unable to reach a verdict (a `gh` that is missing, unauthenticated, or otherwise fails), and that rule's id then goes in `unverified` rather than becoming a false gap. A missing default is a gap and sets exit 1. A missing recommendation is printed under a second heading, `Recommendations`, and never changes the exit code.
 
 ## 3. Rules
 

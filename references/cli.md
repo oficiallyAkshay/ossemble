@@ -9,7 +9,7 @@ invocation.
 
 | Subcommand | Arguments | Exit 1 means |
 | --- | --- | --- |
-| `audit [path] --json --api` | checks the repo against `rules/rules.json`, loaded from beside the script, never from the target | at least one failed default rule (a gap). `--api` also reads repo settings and the ruleset through `gh`. `--json` prints the same rows as objects |
+| `audit [path] --json --api` | checks the repo against `rules/rules.json`, loaded from beside the script, never from the target | at least one failed default rule (a gap). `--api` also reads repo settings, the ruleset and private vulnerability reporting through `gh`. `--json` prints the same rows as objects; with `--api` it nests them under `gaps`, alongside an `unverified` list naming any api-check rule id `gh` could not reach a verdict for |
 | `scaffold [path] --set NAME --var KEY=VALUE --check` | stamps a named template set; idempotent, refuses symlinks | with `--check`, at least one file would change; without it, a file on disk differs from every version this manifest has ever stamped (drift), and nothing is written for that file |
 | `name CANDIDATE... --json` | screens every candidate against every registry | at least one candidate is taken |
 | `resume [path] --json` | environment check, stage, regressions, next step, from `.ossemble/state.json` and a live audit | a required tool is missing, the no-reply git identity is not set, or the state file failed to parse |

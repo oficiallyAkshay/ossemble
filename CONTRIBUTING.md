@@ -66,4 +66,5 @@ merge either way.
 
 ### Reporting a vulnerability
 
-Open an issue. This repo has no private reporting channel, by design.
+See [SECURITY.md](SECURITY.md): use GitHub's private vulnerability
+reporting on this repository, never a public issue.
