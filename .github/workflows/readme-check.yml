@@ -25,4 +25,4 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: oficiallyAkshay/readmerlin@ded49f27b3c6800c59d1ed3b3bf756c5f1bc9f00 # v1, a few commits ahead of the last tag
+      - uses: oficiallyAkshay/readmerlin@65882c2047e9170dbe2132ada0f38c4c127e5b91 # v1.0.0
