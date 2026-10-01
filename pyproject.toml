@@ -15,9 +15,9 @@ package = false
 dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
-    "diff-cover==10.5.1",
+    "diff-cover==10.6.0",
     "pre-commit==4.6.2",
-    "ty==0.0.82",
+    "ty==0.0.84",
 ]
 
 [tool.pytest.ini_options]
