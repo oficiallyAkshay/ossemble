@@ -338,7 +338,14 @@ Every confirmed finding gets its own PR, following the exact build-wave mechanic
 
 Who decides: readmerlin drafts and checks; the owner reads before merging.
 
-The readmerlin skill drafts the README against the rendered repo as a stranger would see it, `readmerlin check` gates it in CI (already stamped at boot), and rounds converge over about three passes of numbered instructions before the owner merges on their word; this is the one place a verifier pass runs by default, because the owner said so for README rewrites. (PRC-004) CONTRIBUTING is written two-audience (short for people, dense for agents) at this step, and ponytail runs report-only a second time, now over docs. (STR-005)
+The readmerlin skill drafts the README against the rendered repo as a stranger would see it, `readmerlin check` gates it in CI (stamp it with `python3 scripts/ossemble scaffold --set readme-check`), and rounds converge over about three passes of numbered instructions before the owner merges on their word; this is the one place a verifier pass runs by default, because the owner said so for README rewrites. (PRC-004) CONTRIBUTING is written two-audience (short for people, dense for agents) at this step, and ponytail runs report-only a second time, now over docs. (STR-005)
+
+The hero is drawn by figurehead, never by hand, from the committed spec beside it. Run both of these and fix every failure `check` reports before the owner sees the image:
+
+```
+node <figurehead>/scripts/figurehead.mjs render assets/readme/hero.hero.json --out assets/readme/hero.svg
+node <figurehead>/scripts/figurehead.mjs check assets/readme/hero.hero.json assets/readme/hero.svg --repo .
+```
 
 ## 10 Recommend
 
