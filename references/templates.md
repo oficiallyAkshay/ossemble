@@ -4,13 +4,17 @@
 under `templates/`, its destination in the target repo, the named set
 it belongs to (`boot`, `finish`, and optional sets such as `scorecard`,
 `codeql`, `coderabbit`, `dependabot-automerge`, `audit-deps`,
-`ruleset`), an optional `when` condition, the `{{VAR}}` placeholders it
+`ruleset`, `readme-check`, `clonometer`), an optional `when` condition, the `{{VAR}}` placeholders it
 needs, optional defaults for those, and the rule ids it satisfies.
 Stamp a set with:
 
 ```
 python3 scripts/ossemble scaffold --set <name> --var KEY=VALUE
 ```
+
+`clonometer` is opt-in: no other set stamps it, and it needs a
+`TRAFFIC_TOKEN` repository secret before its first run. `readme-check`
+runs `readmerlin check` on every push and weekly.
 
 `scaffold` is idempotent: stamping the same set twice changes nothing.
 Add `--check` first to see what would happen without writing anything.

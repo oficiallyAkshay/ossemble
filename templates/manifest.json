@@ -99,6 +99,23 @@
     ]
   },
   {
+    "src": "clonometer/.github/workflows/clonometer.yml",
+    "dest": ".github/workflows/clonometer.yml",
+    "set": "clonometer",
+    "when": null,
+    "vars": [],
+    "rules": [
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "NO-003",
+      "NO-012"
+    ]
+  },
+  {
     "src": "codeql/.github/workflows/codeql.yml",
     "dest": ".github/workflows/codeql.yml",
     "set": "codeql",
@@ -140,6 +157,23 @@
     "vars": [],
     "rules": [
       "CI-011",
+      "HRD-001",
+      "HRD-002",
+      "HRD-003",
+      "HRD-004",
+      "HRD-005",
+      "HRD-006",
+      "NO-003"
+    ]
+  },
+  {
+    "src": "readme-check/.github/workflows/readme-check.yml",
+    "dest": ".github/workflows/readme-check.yml",
+    "set": "readme-check",
+    "when": null,
+    "vars": [],
+    "rules": [
+      "DOC-009",
       "HRD-001",
       "HRD-002",
       "HRD-003",
