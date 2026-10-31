@@ -18,27 +18,28 @@ SET_FILES = {
 }
 
 
-def _make_args(*, path: str, set_name: str) -> argparse.Namespace:
-    return argparse.Namespace(path=path, set_name=set_name, variables=[], check=False)
+def _make_args(*, path: str, set_name: str, variables: list[str]) -> argparse.Namespace:
+    return argparse.Namespace(path=path, set_name=set_name, variables=variables, check=False)
 
 
 @pytest.mark.parametrize(("set_name", "dest"), SET_FILES.items())
 def test_stamping_the_set_writes_the_workflow_this_repo_runs_itself(
     set_name, dest, tmp_path
 ) -> None:
-    exit_code = scaffold.run(_make_args(path=str(tmp_path), set_name=set_name))
+    exit_code = scaffold.run(_make_args(path=str(tmp_path), set_name=set_name, variables=[]))
 
     assert exit_code == 0
     stamped = (tmp_path / dest).read_bytes()
     assert stamped == (REPO_ROOT / dest).read_bytes()
-    assert [p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()] == [
-        dest
-    ]
+    written = [p for p in tmp_path.rglob("*") if p.is_file()]
+    assert written == [tmp_path / dest]
 
 
 @pytest.mark.parametrize("set_name", ["boot", "finish"])
 def test_the_default_sets_never_stamp_clonometer(set_name, tmp_path) -> None:
-    exit_code = scaffold.run(_make_args(path=str(tmp_path), set_name=set_name))
+    args = _make_args(path=str(tmp_path), set_name=set_name, variables=["NAME=widget"])
+
+    exit_code = scaffold.run(args)
 
     assert exit_code == 0
     assert not (tmp_path / SET_FILES["clonometer"]).exists()
