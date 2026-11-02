@@ -225,6 +225,13 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
     _print_report(gap_rows, recommendation_rows, unverified_ids, as_json=args.as_json, api=args.api)
+    if "zizmor" in facts and facts["zizmor"] is None:
+        print(
+            "ossemble audit: zizmor is not installed or gave no JSON, so the checks it feeds"
+            " (HRD-001, HRD-002, HRD-004, HRD-005, HRD-006) were skipped;"
+            " install zizmor to run them",
+            file=sys.stderr,
+        )
 
     return 1 if gap_rows else 0
 
@@ -586,21 +593,68 @@ def leanness_tool_never_wired_into_ci(root: Path, facts: dict) -> ProbeResult:
     return None
 
 
+_ZIZMOR_COMMAND = "zizmor"
+
+
+def _run_zizmor(root: Path) -> list[dict] | None:
+    """zizmor's pedantic JSON findings, or None when it is missing or gives no JSON."""
+    try:
+        result = subprocess.run(  # noqa: S603 -- fixed argv, never a shell
+            [
+                _ZIZMOR_COMMAND,
+                "--persona=pedantic",
+                "--format=json",
+                "--offline",
+                "--no-exit-codes",
+                ".github/workflows",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        findings = json.loads(result.stdout)
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return None
+    return findings if isinstance(findings, list) else None
+
+
+def _zizmor_gap(
+    root: Path, facts: dict, idents: set[str], *, job_level: bool | None = None
+) -> ProbeResult:
+    """The first live zizmor finding whose id is in `idents`, as a gap row.
+
+    A missing zizmor leaves nothing to report; `run` says so once. With
+    `job_level` set, a finding counts only when its route runs through
+    `jobs` (True) or does not (False).
+    """
+    if "zizmor" not in facts:
+        facts["zizmor"] = _run_zizmor(root)
+    for finding in facts["zizmor"] or []:
+        if finding["ident"] not in idents or finding.get("ignored"):
+            continue
+        locations = [loc["symbolic"] for loc in finding["locations"]]
+        primary = next((loc for loc in locations if loc.get("kind") == "Primary"), {})
+        if job_level is not None and job_level != ('"jobs"' in json.dumps(primary.get("route"))):
+            continue
+        key = primary.get("key", {}).get("Local", {})
+        file_ = key.get("given_path") or key.get("verbatim_path", ".github/workflows")
+        return (file_, f"zizmor {finding['ident']}: {finding['desc']}")
+    return None
+
+
 def workflow_top_level_permissions_empty(root: Path, facts: dict) -> ProbeResult:
     """Set `permissions: {}` at the top of every workflow."""
     for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
         if not re.search(r"^permissions:\s*\{\}\s*$", text, re.MULTILINE):
             return (str(path.relative_to(root)), "no top-level `permissions: {}`")
-    return None
+    return _zizmor_gap(root, facts, {"excessive-permissions"}, job_level=False)
 
 
 def job_level_permissions_declared(root: Path, facts: dict) -> ProbeResult:
     """Grant each job only the permissions it needs, declared on the job itself."""
-    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
-        for name, body in _jobs(text).items():
-            if not re.search(r"^\s+permissions:", body, re.MULTILINE):
-                return (str(path.relative_to(root)), f"job {name!r} has no permissions of its own")
-    return None
+    return _zizmor_gap(root, facts, {"excessive-permissions"}, job_level=True)
 
 
 def job_timeout_minutes_set(root: Path, facts: dict) -> ProbeResult:
@@ -614,14 +668,7 @@ def job_timeout_minutes_set(root: Path, facts: dict) -> ProbeResult:
 
 def checkout_persist_credentials_false(root: Path, facts: dict) -> ProbeResult:
     """Set `persist-credentials: false` on every checkout step."""
-    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
-        for step in _steps(text):
-            if "actions/checkout@" in step and "persist-credentials: false" not in step:
-                return (
-                    str(path.relative_to(root)),
-                    "a checkout step does not set persist-credentials: false",
-                )
-    return None
+    return _zizmor_gap(root, facts, {"artipacked"})
 
 
 ZIZMOR_UNPINNED_IGNORE = re.compile(r"zizmor:\s*ignore\[unpinned-uses\]\s*(\S.*)?")
@@ -648,11 +695,13 @@ def actions_pinned_to_full_sha_with_version_comment(root: Path, facts: dict) -> 
             ignore_match = ZIZMOR_UNPINNED_IGNORE.search(line)
             if ignore_match and ignore_match.group(1):
                 continue
-            return (
-                str(path.relative_to(root)),
-                f"not pinned to a full SHA with a version comment: {line.strip()}",
-            )
-    return None
+            if pinned or ignore_match:
+                return (
+                    str(path.relative_to(root)),
+                    "needs a version comment after the SHA or a reason after the ignore: "
+                    + line.strip(),
+                )
+    return _zizmor_gap(root, facts, {"unpinned-uses"})
 
 
 def pinact_verify_runs_on_pull_request(root: Path, facts: dict) -> ProbeResult:
@@ -691,17 +740,7 @@ def zizmor_runs_in_precommit_or_ci(root: Path, facts: dict) -> ProbeResult:
 
 def no_expression_interpolation_in_run_steps(root: Path, facts: dict) -> ProbeResult:
     """Never put `${{ }}` inside a `run:` step; pass the value through `env:` instead."""
-    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
-        for step in _steps(text):
-            run_value = _run_value(step)
-            if run_value is None:
-                continue
-            if "${{" in run_value:
-                return (
-                    str(path.relative_to(root)),
-                    "a run: step interpolates ${{ }} directly instead of using env:",
-                )
-    return None
+    return _zizmor_gap(root, facts, {"template-injection"})
 
 
 def secrets_scan_configured_over_full_history(root: Path, facts: dict) -> ProbeResult:

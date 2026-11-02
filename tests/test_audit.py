@@ -1168,6 +1168,149 @@ def test_workflow_top_level_permissions_empty_fails_when_missing(tmp_path) -> No
     assert audit.workflow_top_level_permissions_empty(tmp_path, facts()) is not None
 
 
+# These fixtures are written by hand in the shape zizmor's documentation shows
+# (docs.zizmor.sh/usage). They prove the mapping from finding ids to rule ids,
+# not zizmor's real behaviour.
+def zfinding(ident: str, route: tuple = ("jobs", "build"), *, ignored: bool = False) -> dict:
+    related = {"symbolic": {"key": {"Local": {"given_path": "other.yml"}}, "kind": "Related"}}
+    primary = {
+        "symbolic": {
+            "key": {"Local": {"given_path": ".github/workflows/ci.yml"}},
+            "annotation": "this job",
+            "route": {"route": [{"Key": name} for name in route]},
+            "feature_kind": "Normal",
+            "kind": "Primary",
+        },
+        "concrete": {"feature": "build:"},
+    }
+    return {
+        "ident": ident,
+        "desc": f"{ident} desc",
+        "url": f"https://docs.zizmor.sh/audits/#{ident}",
+        "determinations": {"confidence": "High", "severity": "Medium", "persona": "Pedantic"},
+        "locations": [related, primary],
+        "ignored": ignored,
+    }
+
+
+@pytest.fixture(autouse=True)
+def zizmor_absent_unless_faked(monkeypatch) -> None:
+    monkeypatch.setattr(audit, "_ZIZMOR_COMMAND", "zizmor-absent-for-tests")
+
+
+def test_top_level_permissions_fails_on_a_workflow_level_excessive_permissions_finding(
+    tmp_path,
+) -> None:
+    workflow(tmp_path, "name: ci\npermissions: {}\njobs: {}\n")
+    found = [zfinding("excessive-permissions", ("permissions",))]
+    result = audit.workflow_top_level_permissions_empty(tmp_path, facts(zizmor=found))
+    expected = "zizmor excessive-permissions: excessive-permissions desc"
+    assert result == (".github/workflows/ci.yml", expected)
+
+
+def test_top_level_permissions_ignores_a_job_level_finding(tmp_path) -> None:
+    workflow(tmp_path, "name: ci\npermissions: {}\njobs: {}\n")
+    found = [zfinding("excessive-permissions", ("jobs", "build", "permissions"))]
+    assert audit.workflow_top_level_permissions_empty(tmp_path, facts(zizmor=found)) is None
+
+
+def test_job_level_permissions_fails_on_a_job_level_excessive_permissions_finding(
+    tmp_path,
+) -> None:
+    found = [zfinding("excessive-permissions", ("jobs", "build", "permissions"))]
+    assert audit.job_level_permissions_declared(tmp_path, facts(zizmor=found)) is not None
+
+
+def test_job_level_permissions_ignores_a_workflow_level_finding(tmp_path) -> None:
+    found = [zfinding("excessive-permissions", ("permissions",))]
+    assert audit.job_level_permissions_declared(tmp_path, facts(zizmor=found)) is None
+
+
+def test_a_missing_zizmor_reports_nothing_and_is_run_once(tmp_path, monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(audit, "_run_zizmor", lambda root: calls.append(root))
+    shared = facts()
+    assert audit.job_level_permissions_declared(tmp_path, shared) is None
+    assert audit.checkout_persist_credentials_false(tmp_path, shared) is None
+    assert calls == [tmp_path]
+
+
+def test_a_zizmor_finding_with_no_primary_location_names_the_workflows_folder(tmp_path) -> None:
+    found = [{"ident": "artipacked", "desc": "d", "locations": [], "ignored": False}]
+    result = audit.checkout_persist_credentials_false(tmp_path, facts(zizmor=found))
+    assert result == (".github/workflows", "zizmor artipacked: d")
+
+
+def test_a_zizmor_finding_names_its_file_by_verbatim_path_when_given_path_is_absent(
+    tmp_path,
+) -> None:
+    found = [
+        {
+            "ident": "artipacked",
+            "desc": "d",
+            "locations": [
+                {"symbolic": {"kind": "Primary", "key": {"Local": {"verbatim_path": "a.yml"}}}}
+            ],
+        }
+    ]
+    result = audit.checkout_persist_credentials_false(tmp_path, facts(zizmor=found))
+    assert result == ("a.yml", "zizmor artipacked: d")
+
+
+def test_zizmor_findings_with_another_id_or_an_ignore_report_nothing(tmp_path) -> None:
+    found = [zfinding("template-injection"), zfinding("artipacked", ignored=True)]
+    assert audit.checkout_persist_credentials_false(tmp_path, facts(zizmor=found)) is None
+
+
+def test_run_zizmor_asks_for_pedantic_json_and_returns_the_findings(tmp_path, monkeypatch) -> None:
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = argv
+        seen["cwd"] = kwargs["cwd"]
+        return subprocess.CompletedProcess(argv, 14, stdout='[{"ident": "artipacked"}]', stderr="")
+
+    monkeypatch.setattr(audit.subprocess, "run", fake_run)
+    assert audit._run_zizmor(tmp_path) == [{"ident": "artipacked"}]
+    assert "--persona=pedantic" in seen["argv"]
+    assert "--format=json" in seen["argv"]
+    assert seen["cwd"] == tmp_path
+
+
+@pytest.mark.parametrize("stdout", ["", "not json", '{"ident": "artipacked"}'])
+def test_run_zizmor_returns_none_for_output_that_is_not_a_findings_list(
+    tmp_path, monkeypatch, stdout
+) -> None:
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(argv, 1, stdout=stdout, stderr=""),
+    )
+    assert audit._run_zizmor(tmp_path) is None
+
+
+def test_run_zizmor_returns_none_when_the_command_is_missing(tmp_path) -> None:
+    assert audit._run_zizmor(tmp_path) is None
+
+
+def test_run_zizmor_returns_none_on_a_timeout(tmp_path, monkeypatch) -> None:
+    def time_out(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, 120)
+
+    monkeypatch.setattr(audit.subprocess, "run", time_out)
+    assert audit._run_zizmor(tmp_path) is None
+
+
+def test_run_says_once_on_stderr_that_a_missing_zizmor_skipped_its_checks(
+    tmp_path, capsys
+) -> None:
+    workflow(tmp_path, "name: ci\npermissions: {}\njobs: {}\n")
+    audit.run(argparse.Namespace(path=str(tmp_path), api=False, as_json=False))
+    captured = capsys.readouterr()
+    assert captured.err.count("zizmor is not installed") == 1
+    assert "HRD-006" in captured.err
+
+
 GOOD_JOB = (
     "jobs:\n  build:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n"
     "    permissions:\n      contents: read\n"
@@ -1177,11 +1320,6 @@ GOOD_JOB = (
 def test_job_level_permissions_declared_passes_when_every_job_has_one(tmp_path) -> None:
     workflow(tmp_path, GOOD_JOB)
     assert audit.job_level_permissions_declared(tmp_path, facts()) is None
-
-
-def test_job_level_permissions_declared_fails_when_a_job_has_none(tmp_path) -> None:
-    workflow(tmp_path, "jobs:\n  build:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n")
-    assert audit.job_level_permissions_declared(tmp_path, facts()) is not None
 
 
 def test_job_timeout_minutes_set_passes_when_every_job_has_one(tmp_path) -> None:
@@ -1213,9 +1351,10 @@ def test_checkout_persist_credentials_false_passes_when_set(tmp_path) -> None:
     assert audit.checkout_persist_credentials_false(tmp_path, facts()) is None
 
 
-def test_checkout_persist_credentials_false_fails_when_missing(tmp_path) -> None:
+def test_checkout_persist_credentials_false_fails_on_an_artipacked_finding(tmp_path) -> None:
     workflow(tmp_path, CHECKOUT_BAD)
-    assert audit.checkout_persist_credentials_false(tmp_path, facts()) is not None
+    found = [zfinding("artipacked", ("jobs", "build", "steps"))]
+    assert audit.checkout_persist_credentials_false(tmp_path, facts(zizmor=found)) is not None
 
 
 def test_actions_pinned_to_full_sha_with_version_comment_passes_for_a_pinned_action(
@@ -1229,9 +1368,14 @@ def test_actions_pinned_to_full_sha_with_version_comment_passes_for_a_pinned_act
     assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
 
 
-def test_actions_pinned_to_full_sha_with_version_comment_fails_for_a_tag_pin(tmp_path) -> None:
+def test_actions_pinned_to_full_sha_with_version_comment_fails_on_an_unpinned_uses_finding(
+    tmp_path,
+) -> None:
     workflow(tmp_path, "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n")
-    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is not None
+    found = [zfinding("unpinned-uses", ("jobs", "build", "steps"))]
+    result = audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts(zizmor=found))
+    assert result is not None
+    assert "unpinned-uses" in result[1]
 
 
 def test_actions_pinned_to_full_sha_with_version_comment_ignores_uses_mentioned_in_a_comment(
@@ -1291,7 +1435,16 @@ def test_actions_pinned_to_full_sha_with_version_comment_still_fails_with_no_pin
 ) -> None:
     """Exempting local paths and docker refs must not exempt a bare third-party reference."""
     workflow(tmp_path, "jobs:\n  build:\n    steps:\n      - uses: actions/checkout\n")
-    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is not None
+    found = [zfinding("unpinned-uses", ("jobs", "build", "steps"))]
+    result = audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts(zizmor=found))
+    assert result is not None
+
+
+def test_actions_pinned_to_full_sha_with_version_comment_passes_when_zizmor_is_missing(
+    tmp_path,
+) -> None:
+    workflow(tmp_path, "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n")
+    assert audit.actions_pinned_to_full_sha_with_version_comment(tmp_path, facts()) is None
 
 
 def test_actions_pinned_to_full_sha_with_version_comment_passes_for_a_quoted_ratchet_pin(
@@ -1405,7 +1558,7 @@ def test_zizmor_runs_in_precommit_or_ci_passes_with_the_pre_commit_hook(tmp_path
         tmp_path,
         ".pre-commit-config.yaml",
         "repos:\n  - repo: https://github.com/woodruffw/zizmor-pre-commit\n"
-        "    rev: v1.30.1\n    hooks:\n      - id: zizmor\n",
+        "    rev: v1.31.1\n    hooks:\n      - id: zizmor\n",
     )
     assert audit.zizmor_runs_in_precommit_or_ci(tmp_path, facts()) is None
 
@@ -1451,7 +1604,8 @@ def test_no_expression_interpolation_in_run_steps_fails_when_run_interpolates_di
     tmp_path,
 ) -> None:
     workflow(tmp_path, 'jobs:\n  build:\n    steps:\n      - run: echo "${{ github.sha }}"\n')
-    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts()) is not None
+    found = [zfinding("template-injection", ("jobs", "build", "steps"))]
+    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts(zizmor=found)) is not None
 
 
 def test_no_expression_interpolation_in_run_steps_passes_for_a_step_with_no_run_key(
@@ -1496,7 +1650,8 @@ def test_no_expression_interpolation_in_run_steps_still_fails_inside_a_real_run_
         "jobs:\n  build:\n    steps:\n"
         '      - run: echo "${{ github.sha }}"\n',
     )
-    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts()) is not None
+    found = [zfinding("template-injection", ("jobs", "build", "steps"))]
+    assert audit.no_expression_interpolation_in_run_steps(tmp_path, facts(zizmor=found)) is not None
 
 
 def test_secrets_scan_configured_over_full_history_fails_when_no_workflow_runs_it(
