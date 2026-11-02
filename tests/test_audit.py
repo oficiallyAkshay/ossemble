@@ -1193,11 +1193,6 @@ def zfinding(ident: str, route: tuple = ("jobs", "build"), *, ignored: bool = Fa
     }
 
 
-@pytest.fixture(autouse=True)
-def zizmor_absent_unless_faked(monkeypatch) -> None:
-    monkeypatch.setattr(audit, "_ZIZMOR_COMMAND", "zizmor-absent-for-tests")
-
-
 def test_top_level_permissions_fails_on_a_workflow_level_excessive_permissions_finding(
     tmp_path,
 ) -> None:
