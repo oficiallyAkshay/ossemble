@@ -1344,6 +1344,11 @@ def test_checkout_persist_credentials_false_passes_when_set(tmp_path) -> None:
     assert audit.checkout_persist_credentials_false(tmp_path, facts()) is None
 
 
+def test_checkout_persist_credentials_false_fails_on_an_explicit_true(tmp_path) -> None:
+    workflow(tmp_path, CHECKOUT_BAD + "        with:\n          persist-credentials: true\n")
+    assert audit.checkout_persist_credentials_false(tmp_path, facts()) is not None
+
+
 def test_checkout_persist_credentials_false_fails_on_an_artipacked_finding(tmp_path) -> None:
     workflow(tmp_path, CHECKOUT_BAD)
     found = [zfinding("artipacked", ("jobs", "build", "steps"))]

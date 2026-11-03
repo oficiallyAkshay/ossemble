@@ -35,6 +35,7 @@
       "CI-003  .github/workflows/codeql-analysis.yml",
       "HRD-001  .github/workflows/test.yml",
       "HRD-003  .github/workflows/codeql-analysis.yml",
+      "HRD-004  .github/workflows/update-docs.yml",
       "HRD-006  .github/workflows/test.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",

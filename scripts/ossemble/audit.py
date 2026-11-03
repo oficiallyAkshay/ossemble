@@ -667,7 +667,20 @@ def job_timeout_minutes_set(root: Path, facts: dict) -> ProbeResult:
 
 
 def checkout_persist_credentials_false(root: Path, facts: dict) -> ProbeResult:
-    """Set `persist-credentials: false` on every checkout step."""
+    """Set `persist-credentials: false` on every checkout step.
+
+    zizmor's artipacked audit stays quiet on an explicit `persist-credentials: true`
+    (a deliberate choice, such as a docs push), so that one is still caught here.
+    """
+    for path, text in _cached(facts, "workflow_items", lambda: _workflow_item_list(root)):
+        for step in _steps(text):
+            if "actions/checkout@" in step and re.search(
+                r"persist-credentials:\s*[\"']?true", step
+            ):
+                return (
+                    str(path.relative_to(root)),
+                    "a checkout step sets persist-credentials: true",
+                )
     return _zizmor_gap(root, facts, {"artipacked"})
 
 
