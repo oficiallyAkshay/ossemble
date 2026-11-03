@@ -37,15 +37,6 @@ ALLOWED_STATE_KEYS = {
     "checks",
 }
 
-LOCKFILE_NAMES = (
-    "uv.lock",
-    "poetry.lock",
-    "Pipfile.lock",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-)
-
 # readmerlin's closed section order (its `sectionOrder` config, readmerlin.mjs). A README
 # heading must come from this set, in this order.
 README_SECTION_ORDER = [
@@ -1049,15 +1040,16 @@ def readme_check_exec_flag_is_true(root: Path, _facts: dict) -> ProbeResult:
     return None
 
 
-def no_lockfile_committed(root: Path, facts: dict) -> ProbeResult:
-    """Never commit a lockfile."""
+def uv_lock_committed(root: Path, facts: dict) -> ProbeResult:
+    """Commit uv.lock for a repo with a dependency group, so CI and a contributor agree."""
+    config = _cached(facts, "pyproject", lambda: _load_toml(root / "pyproject.toml"))
+    if config is None or "dependency-groups" not in config:
+        return None
     tracked = _cached(facts, "tracked_files", lambda: _tracked_files(root))
-    for name in LOCKFILE_NAMES:
-        if not (root / name).exists():
-            continue
-        if tracked is None or name in tracked:
-            return (name, "a lockfile is committed")
-    return None
+    committed = (root / "uv.lock").exists() if tracked is None else "uv.lock" in tracked
+    if committed:
+        return None
+    return ("uv.lock", "uv.lock is not committed")
 
 
 _BADGES_BRANCH_PATTERN = re.compile(
@@ -1435,7 +1427,7 @@ PROBES = {
         readme_check_exec_flag_is_true,
         pinact_verify_runs_on_pull_request,
         zizmor_runs_in_precommit_or_ci,
-        no_lockfile_committed,
+        uv_lock_committed,
         only_clonometer_pushes_to_badges_branch,
         zero_tokens_beyond_builtin_github_token,
         commit_identity_is_noreply,

@@ -105,7 +105,6 @@
       "HRD-006  .github/workflows/create_tests_package_lists.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-014  .github/workflows",
-      "NO-001  uv.lock",
       "NO-003  .github/workflows/pre-release.yml",
       "STR-001  pyproject.toml",
       "STR-002  pyproject.toml",
@@ -122,7 +121,6 @@
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",
       "HRD-014  .github/workflows",
-      "NO-001  uv.lock",
       "STR-002  pyproject.toml",
       "TST-001  pyproject.toml"
     ]
@@ -187,7 +185,6 @@
       "HRD-003  .github/workflows/benchmark.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-014  .github/workflows",
-      "NO-001  uv.lock",
       "PRV-001  .",
       "STR-002  pyproject.toml",
       "TST-001  pyproject.toml"

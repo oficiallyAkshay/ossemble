@@ -206,9 +206,7 @@
     "set": "boot",
     "when": null,
     "vars": [],
-    "rules": [
-      "NO-001"
-    ]
+    "rules": []
   },
   {
     "src": "boot/.pre-commit-config.yaml",
