@@ -436,17 +436,17 @@
     "probe": "zizmor_runs_in_precommit_or_ci"
   },
   {
-    "id": "NO-001",
-    "text": "Never commit a lockfile; binds Python repos only, since the basis is uv resolving a Python dev group.",
-    "basis": "what the 2026-09-18 prompt changes: unchanged and restated; things I have said no to",
-    "category": "the no-list",
+    "id": "HRD-016",
+    "text": "Commit uv.lock and sync with `uv sync --locked`; binds Python repos only.",
+    "basis": "with uv.lock ignored, CI resolved every transitive package fresh on each run, and Dependabot could not review the lock",
+    "category": "hardening",
     "kind": "default",
     "stage": "build",
     "check": "audit",
     "when": {
       "language": "python"
     },
-    "probe": "no_lockfile_committed"
+    "probe": "uv_lock_committed"
   },
   {
     "id": "NO-002",

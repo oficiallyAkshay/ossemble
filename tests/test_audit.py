@@ -2338,16 +2338,16 @@ def test_readme_check_exec_flag_is_true_fails_when_exec_is_false(tmp_path) -> No
     assert audit.readme_check_exec_flag_is_true(tmp_path, facts()) is not None
 
 
-def test_no_lockfile_committed_passes_without_a_lockfile(tmp_path) -> None:
-    assert audit.no_lockfile_committed(tmp_path, facts()) is None
+def test_uv_lock_committed_fails_without_a_lockfile(tmp_path) -> None:
+    assert audit.uv_lock_committed(tmp_path, facts()) == ("uv.lock", "uv.lock is not committed")
 
 
-def test_no_lockfile_committed_fails_when_uv_lock_is_present_outside_a_git_repo(tmp_path) -> None:
+def test_uv_lock_committed_passes_when_uv_lock_is_present_outside_a_git_repo(tmp_path) -> None:
     write(tmp_path, "uv.lock", "")
-    assert audit.no_lockfile_committed(tmp_path, facts()) is not None
+    assert audit.uv_lock_committed(tmp_path, facts()) is None
 
 
-def test_no_lockfile_committed_passes_when_a_lockfile_exists_but_is_gitignored_and_untracked(
+def test_uv_lock_committed_fails_when_a_lockfile_exists_but_is_gitignored_and_untracked(
     tmp_path,
 ) -> None:
     init_git_repo(tmp_path)
@@ -2356,16 +2356,16 @@ def test_no_lockfile_committed_passes_when_a_lockfile_exists_but_is_gitignored_a
     subprocess.run(["git", "commit", "-q", "-m", "Ignore uv.lock"], cwd=tmp_path, check=True)
     write(tmp_path, "uv.lock", "# untracked, local only\n")
 
-    assert audit.no_lockfile_committed(tmp_path, facts()) is None
+    assert audit.uv_lock_committed(tmp_path, facts()) is not None
 
 
-def test_no_lockfile_committed_fails_when_a_lockfile_is_tracked_by_git(tmp_path) -> None:
+def test_uv_lock_committed_passes_when_the_lockfile_is_tracked_by_git(tmp_path) -> None:
     init_git_repo(tmp_path)
     write(tmp_path, "uv.lock", "# tracked\n")
     subprocess.run(["git", "add", "uv.lock"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "Add uv.lock"], cwd=tmp_path, check=True)
 
-    assert audit.no_lockfile_committed(tmp_path, facts()) is not None
+    assert audit.uv_lock_committed(tmp_path, facts()) is None
 
 
 # --- only_clonometer_pushes_to_badges_branch --------------------------------------------------
@@ -2432,31 +2432,27 @@ def test_only_clonometer_pushes_to_badges_branch_fails_on_a_forced_push_to_badge
     assert audit.only_clonometer_pushes_to_badges_branch(tmp_path, facts()) is not None
 
 
-def test_no_001_does_not_fire_on_a_javascript_repo_with_a_committed_package_lock(
-    tmp_path,
-) -> None:
-    """NO-001's basis is uv resolving a Python dev group; it must not bind a JS action."""
+def test_hrd_016_does_not_fire_on_a_javascript_repo_without_uv_lock(tmp_path) -> None:
+    """HRD-016's basis is uv resolving a Python dev group; it must not bind a JS action."""
     init_git_repo(tmp_path)
     write(tmp_path, "action.yml", "runs:\n  using: node20\n  main: dist/index.js\n")
-    write(tmp_path, "package-lock.json", "{}\n")
-    subprocess.run(["git", "add", "action.yml", "package-lock.json"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "action.yml"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "Add the action"], cwd=tmp_path, check=True)
 
     rows = audit.gaps(tmp_path)
 
-    assert "NO-001" not in {row["id"] for row in rows}
+    assert "HRD-016" not in {row["id"] for row in rows}
 
 
-def test_no_001_still_fires_on_a_python_repo_with_a_committed_lockfile(tmp_path) -> None:
+def test_hrd_016_fires_on_a_python_repo_without_a_committed_lockfile(tmp_path) -> None:
     init_git_repo(tmp_path)
     write(tmp_path, "pyproject.toml", "[project]\nname = 'x'\nversion = '0'\n")
-    write(tmp_path, "uv.lock", "# tracked\n")
-    subprocess.run(["git", "add", "pyproject.toml", "uv.lock"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "Add uv.lock"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "Add the project"], cwd=tmp_path, check=True)
 
     rows = audit.gaps(tmp_path)
 
-    assert "NO-001" in {row["id"] for row in rows}
+    assert "HRD-016" in {row["id"] for row in rows}
 
 
 def test_tracked_files_returns_none_outside_a_git_repo(tmp_path) -> None:
