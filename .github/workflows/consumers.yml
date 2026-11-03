@@ -36,6 +36,10 @@ jobs:
         with:
           persist-credentials: false
       # The script is standard library only and clones its own fixtures;
-      # the runner's own python3 (3.12+) is enough, no uv sync.
+      # the runner's own python3 (3.12+) is enough, no uv sync. Five of the
+      # workflow checks read zizmor's JSON, so zizmor is installed at the
+      # version the pre-commit configs pin; without it those rows vanish.
+      - name: install zizmor
+        run: pipx install zizmor==1.31.1
       - name: audit the pinned community repos
         run: python3 tests/eval/consumers.py

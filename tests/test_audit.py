@@ -1223,7 +1223,7 @@ def test_job_level_permissions_ignores_a_workflow_level_finding(tmp_path) -> Non
 
 def test_a_missing_zizmor_reports_nothing_and_is_run_once(tmp_path, monkeypatch) -> None:
     calls = []
-    monkeypatch.setattr(audit, "_run_zizmor", lambda root: calls.append(root))
+    monkeypatch.setattr(audit, "_run_zizmor", calls.append)
     shared = facts()
     assert audit.job_level_permissions_declared(tmp_path, shared) is None
     assert audit.checkout_persist_credentials_false(tmp_path, shared) is None
@@ -1296,9 +1296,7 @@ def test_run_zizmor_returns_none_on_a_timeout(tmp_path, monkeypatch) -> None:
     assert audit._run_zizmor(tmp_path) is None
 
 
-def test_run_says_once_on_stderr_that_a_missing_zizmor_skipped_its_checks(
-    tmp_path, capsys
-) -> None:
+def test_run_says_once_on_stderr_that_a_missing_zizmor_skipped_its_checks(tmp_path, capsys) -> None:
     workflow(tmp_path, "name: ci\npermissions: {}\njobs: {}\n")
     audit.run(argparse.Namespace(path=str(tmp_path), api=False, as_json=False))
     captured = capsys.readouterr()
