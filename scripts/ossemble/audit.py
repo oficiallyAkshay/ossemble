@@ -597,7 +597,7 @@ _ZIZMOR_COMMAND = "zizmor"
 
 
 def _run_zizmor(root: Path) -> list[dict] | None:
-    """zizmor's pedantic JSON findings, or None when it is missing or gives no JSON."""
+    """Zizmor's pedantic JSON findings, or None when it is missing or gives no JSON."""
     try:
         result = subprocess.run(  # noqa: S603 -- fixed argv, never a shell
             [

@@ -34,9 +34,7 @@
     "rows": [
       "CI-003  .github/workflows/codeql-analysis.yml",
       "HRD-001  .github/workflows/test.yml",
-      "HRD-002  .github/workflows/release.yml",
       "HRD-003  .github/workflows/codeql-analysis.yml",
-      "HRD-004  .github/workflows/update-docs.yml",
       "HRD-006  .github/workflows/test.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",
@@ -56,7 +54,6 @@
     "rows": [
       "CI-003  .github/workflows/build-docset.yml",
       "CI-004  .github/workflows/ci.yml",
-      "HRD-002  .github/workflows/build-docset.yml",
       "HRD-003  .github/workflows/build-docset.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",
@@ -74,7 +71,6 @@
       "CI-003  .github/workflows/codeql.yml",
       "DOC-002  README.md",
       "HRD-001  .github/workflows/ci.yml",
-      "HRD-002  .github/workflows/clonometer.yml",
       "NO-003  .github/workflows/clonometer.yml",
       "STR-002  pyproject.toml",
       "TST-003  clonometer.py"
@@ -87,7 +83,6 @@
       "CI-003  .github/workflows/codeql-analysis.yml",
       "CI-004  .github/workflows/tests.yaml",
       "HRD-001  .github/workflows/codeql-analysis.yml",
-      "HRD-002  .github/workflows/dependency-review.yml",
       "HRD-003  .github/workflows/codeql-analysis.yml",
       "HRD-004  .github/workflows/codeql-analysis.yml",
       "HRD-005  .github/workflows/scorecards.yml",
@@ -105,7 +100,6 @@
       "CI-003  .github/workflows/release.yml",
       "CI-004  .github/workflows/tests.yml",
       "HRD-001  .github/workflows/create_tests_package_lists.yml",
-      "HRD-002  .github/workflows/create_tests_package_lists.yml",
       "HRD-003  .github/workflows/create_tests_package_lists.yml",
       "HRD-006  .github/workflows/create_tests_package_lists.yml",
       "HRD-007  .pre-commit-config.yaml",
@@ -123,7 +117,6 @@
     "rows": [
       "CI-003  .github/workflows/build-docset.yml",
       "CI-004  .github/workflows/ci.yml",
-      "HRD-002  .github/workflows/build-docset.yml",
       "HRD-003  .github/workflows/build-docset.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-008  .github/dependabot.yml",
@@ -140,7 +133,6 @@
       "CI-003  .github/workflows/release.yml",
       "CI-004  .github/workflows/test.yml",
       "HRD-001  .github/workflows/release.yml",
-      "HRD-002  .github/workflows/release.yml",
       "HRD-003  .github/workflows/release.yml",
       "HRD-004  .github/workflows/release.yml",
       "HRD-007  .pre-commit-config.yaml",
@@ -157,7 +149,6 @@
       "CI-003  .github/workflows/codeql-analysis.yml",
       "CI-004  .github/workflows/test.yml",
       "HRD-001  .github/workflows/canary.yml",
-      "HRD-002  .github/workflows/dependency-review.yml",
       "HRD-003  .github/workflows/canary.yml",
       "HRD-004  .github/workflows/canary.yml",
       "HRD-005  .github/workflows/canary.yml",
@@ -192,7 +183,6 @@
     "commit": "e5b9690d7341830c494cdd24f1803623917873d9",
     "rows": [
       "CI-003  .github/workflows/benchmark.yml",
-      "HRD-002  .github/workflows/benchmark.yml",
       "HRD-003  .github/workflows/benchmark.yml",
       "HRD-007  .pre-commit-config.yaml",
       "HRD-014  .github/workflows",
