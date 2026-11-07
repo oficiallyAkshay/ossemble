@@ -1,0 +1,18 @@
+{
+  "badge": "480 (7d) \u2022 1,919 (all-time)",
+  "last7": 480,
+  "last7_short": "480",
+  "metric": "clones",
+  "repo": "oficiallyAkshay/ossemble",
+  "schema": 1,
+  "since": "2026-09-05",
+  "total": 1919,
+  "total_short": "1,919",
+  "updated": "2026-11-07",
+  "window": {
+    "count": 592,
+    "days": 14,
+    "uniques": 105
+  },
+  "window_short": "592"
+}
