@@ -17,7 +17,7 @@ dev = [
     "pytest-cov==7.1.0",
     "diff-cover==11.0.1",
     "pre-commit==4.7.0",
-    "ty==0.0.97",
+    "ty==0.0.101",
 ]
 
 [tool.pytest.ini_options]
