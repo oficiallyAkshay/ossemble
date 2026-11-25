@@ -59,7 +59,6 @@ From the 2026-09-19 survey:
 - Per-skill LICENSE files and THIRD_PARTY_NOTICES: skip, bundle scale.
 - An OS matrix: skip, no cross-platform target.
 - Container attestations and immutable action releases: skip, not published that way.
-- SECURITY.md with private reporting: skip, owner decision.
 
 ## Never for a counter
 

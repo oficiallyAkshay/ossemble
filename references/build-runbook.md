@@ -358,7 +358,7 @@ For every optional part, the model states a verdict first in one line, do it or 
 | Packaging (PyPI, npm) | someone names who runs `pip install` or `npx` and why (DST-001) | the product is consumed as a script, action or skill through git |
 | Tagged release | anyone outside the repo pins it, or the owner asks (DST-002) | a single consumer pins commits instead |
 | Marketplace listing | a GitHub action meant for other people (DST-003) | internal, single-consumer or experimental |
-| OpenSSF Best Practices badge | public, meant for others, and Passing is honest today: tests, CI, licence, contribution guide, a one-line reporting process in the contributing guide (DST-004) | private, internal, experimental, or that one line is missing |
+| OpenSSF Best Practices badge | public, meant for others, and Passing is honest today: tests, CI, licence, contribution guide (DST-004) | private, internal or experimental |
 | OpenSSF Scorecard | any public repo, one workflow, expect a plateau near 8 and a 90-day wait for Maintained (CI-008) | staying private |
 | CodeQL | public repo with code, free there (CI-009) | staying private, where it needs Advanced Security |
 | CodeRabbit | public repo with a PR flow, advisory only, needs the owner's passkey (REV-004) | staying private, where it is paid |
