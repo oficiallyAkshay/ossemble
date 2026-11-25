@@ -5,7 +5,6 @@ A probe returns `None` when its rule holds, else an `(file, message)` gap.
 
 from __future__ import annotations
 
-import contextlib
 import fnmatch
 import json
 import re
@@ -287,7 +286,6 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
         "repo_settings": None,
         "ruleset": None,
         "automated_security_fixes": None,
-        "private_vulnerability_reporting": None,
         "workflow_items": workflow_items,
         "pyproject": pyproject,
         "tracked_files": tracked_files,
@@ -309,15 +307,6 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
                 )
             except (RuntimeError, OSError, json.JSONDecodeError, KeyError):
                 pass
-            # Kept in its own suppress: a repo with no ruleset or automated
-            # security fixes endpoint (both caught above) must not also
-            # blank this fact, and this endpoint's own failure (gh missing,
-            # unauthenticated, a 403 on a fine-grained token without
-            # Administration) must not blank those.
-            with contextlib.suppress(RuntimeError, OSError, json.JSONDecodeError, KeyError):
-                facts["private_vulnerability_reporting"] = cast(
-                    "dict", _gh_api(f"repos/{owner_repo}/private-vulnerability-reporting")
-                )
     return facts
 
 
@@ -1319,42 +1308,6 @@ def copilot_autofix_for_codeql_enabled(_root: Path, facts: dict) -> ProbeResult:
     return None
 
 
-def _security_md_path(root: Path) -> Path | None:
-    for candidate in (root / "SECURITY.md", root / ".github" / "SECURITY.md"):
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def security_reporting_route_must_be_on(root: Path, facts: dict) -> ProbeResult:
-    """When SECURITY.md points to private vulnerability reporting, that setting must be on.
-
-    Never a false row: a `gh` that is missing, unauthenticated, or fails
-    for any other reason leaves `facts["private_vulnerability_reporting"]`
-    `None`, and that is recorded as unverified (`facts["unverified_probes"]`)
-    rather than reported as a gap.
-    """
-    path = _security_md_path(root)
-    if path is None:
-        return None
-    text = _read_text(path)
-    if text is None:
-        return None
-    lowered = text.lower()
-    if "security/advisories" not in lowered and "private vulnerability reporting" not in lowered:
-        return None
-    status = facts.get("private_vulnerability_reporting")
-    if status is None:
-        facts.setdefault("unverified_probes", set()).add("security_reporting_route_must_be_on")
-        return None
-    if not status.get("enabled"):
-        return (
-            str(path.relative_to(root)),
-            "points reporters at private vulnerability reporting, but the setting is off",
-        )
-    return None
-
-
 def ruleset_requires_ci_check(_root: Path, facts: dict) -> ProbeResult:
     """Confirm the branch ruleset requires the `ci` check and has auto-merge armed."""
     ruleset = facts.get("ruleset")
@@ -1451,7 +1404,6 @@ PROBES = {
         topics_are_set,
         secret_scanning_and_push_protection_enabled,
         copilot_autofix_for_codeql_enabled,
-        security_reporting_route_must_be_on,
         ruleset_requires_ci_check,
         ruleset_blocks_history_rewrites,
         ruleset_never_requires_reviews_or_thread_resolution,

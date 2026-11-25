@@ -449,15 +449,6 @@
     "probe": "no_lockfile_committed"
   },
   {
-    "id": "NO-002",
-    "text": "ossemble never stamps a SECURITY.md; a repo that has one keeps it.",
-    "basis": "owner decision item 12: none at all, not stamped, not a default",
-    "category": "the no-list",
-    "kind": "default",
-    "stage": "build",
-    "check": "judgment"
-  },
-  {
     "id": "NO-003",
     "text": "Never let a workflow use a token beyond the built-in `GITHUB_TOKEN` unless the owner opted in.",
     "basis": "owner decision item 3",
@@ -533,16 +524,6 @@
     "kind": "default",
     "stage": "build",
     "check": "judgment"
-  },
-  {
-    "id": "NO-011",
-    "text": "When SECURITY.md points reporters at GitHub private vulnerability reporting, that setting must be on; never publish a reporting route that is off.",
-    "basis": "3 repos found on 2026-09-20 with the route off, a 404 for a reporter",
-    "category": "the no-list",
-    "kind": "default",
-    "stage": "build",
-    "check": "api",
-    "probe": "security_reporting_route_must_be_on"
   },
   {
     "id": "NO-012",

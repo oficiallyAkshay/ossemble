@@ -64,7 +64,3 @@ merge either way.
 - **A new agent role.** Add a prompt file under `agents/`. The roster is
   the directory listing; there is no separate registration step.
 
-### Reporting a vulnerability
-
-Use GitHub's private vulnerability reporting on this repository (the
-Security tab, Report a vulnerability), never a public issue.
