@@ -549,10 +549,14 @@ def test_check_github_repo_without_gh_reports_error_on_a_non_200_response(monkey
 
 
 @pytest.mark.parametrize("candidate", ["mission-status", "30k-feet"])
-def test_run_screens_an_owner_pick_that_breaks_the_one_word_rule(candidate, monkeypatch, capsys) -> None:
+def test_run_screens_an_owner_pick_that_breaks_the_one_word_rule(
+    candidate, monkeypatch, capsys
+) -> None:
     monkeypatch.setattr(name.shutil, "which", lambda _tool: None)
     monkeypatch.setattr(
-        name, "_screen", lambda c, use_gh: {"candidate": c, "status": "free", "free": True, "checks": {}}
+        name,
+        "_screen",
+        lambda c, use_gh: {"candidate": c, "status": "free", "free": True, "checks": {}},
     )
     exit_code = name.run(argparse.Namespace(candidates=[candidate], json=False, owner_pick=True))
 
@@ -563,7 +567,9 @@ def test_run_screens_an_owner_pick_that_breaks_the_one_word_rule(candidate, monk
 
 
 @pytest.mark.parametrize("candidate", ["-status", "status-", "Mission-status", "mission_status"])
-def test_run_rejects_an_owner_pick_that_is_not_a_valid_package_name(candidate, monkeypatch, capsys) -> None:
+def test_run_rejects_an_owner_pick_that_is_not_a_valid_package_name(
+    candidate, monkeypatch, capsys
+) -> None:
     monkeypatch.setattr(name.shutil, "which", lambda _tool: None)
     exit_code = name.run(argparse.Namespace(candidates=[candidate], json=False, owner_pick=True))
 
