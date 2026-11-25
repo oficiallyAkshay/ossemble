@@ -211,7 +211,7 @@ Who decides: model, for the scope and shape; script, for the scout facts and the
 
 The model writes one sentence of value, names the one user and the one output, and writes the refusal list before any file exists. (SCP-001, SCP-002) It also proposes the distribution shape (see the table below) and asks whether the owner opts in to a counting token or to clonometer.
 
-While that draft sits, four things run together: three Haiku scouts (GitHub prior art, npm and PyPI registry facts, comparable skills and actions) and the name-coining pass. The model coins a batch of candidate names, then the script screens the whole batch in one call: `python3 scripts/ossemble name CANDIDATE_ONE CANDIDATE_TWO ... --json`. (SCP-006) Registries are checked first with no rate limit, then GitHub user, org, exact repo and Marketplace slug at 30 calls a minute. The owner only sees the names that came back free.
+While that draft sits, four things run together: three Haiku scouts (GitHub prior art, npm and PyPI registry facts, comparable skills and actions) and the name-coining pass. The model coins a batch of candidate names, then the script screens the whole batch in one call: `python3 scripts/ossemble name CANDIDATE_ONE CANDIDATE_TWO ... --json`. (SCP-006) Registries are checked first with no rate limit, then GitHub user, org, exact repo and Marketplace slug at 30 calls a minute. The owner only sees the names that came back free. A name the owner picks against the one-word rule (a hyphen, a leading digit) is screened with `--owner-pick`; the script prints why it refused a name and names that flag.
 
 ### Distribution-shape judgment
 
