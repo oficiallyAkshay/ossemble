@@ -29,6 +29,8 @@ if TYPE_CHECKING:
     from typing import IO
 
 _CANDIDATE_RE = re.compile(r"^[a-z][a-z0-9]*$")
+# An owner-picked name may break the one-word rule but must still be a valid package and repo name.
+_OWNER_PICK_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _TIMEOUT_SECONDS = 10
 _USER_AGENT = "ossemble-name-check"
 _CHECK_ORDER = ("npm", "pypi", "github_user", "github_repo")
@@ -58,19 +60,33 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     parser.add_argument(
         "--json", action="store_true", help="print machine-readable JSON instead of rows"
     )
+    parser.add_argument(
+        "--owner-pick",
+        action="store_true",
+        help="screen a name the owner picked against the one-word rule (hyphens, a leading digit)",
+    )
     parser.set_defaults(run=run)
     return parser
 
 
 def run(args: argparse.Namespace) -> int:
     """Validate every candidate, screen each one, and print the results."""
+    owner_pick = getattr(args, "owner_pick", False)
     for candidate in args.candidates:
-        if not _CANDIDATE_RE.match(candidate):
+        if _CANDIDATE_RE.match(candidate):
+            continue
+        if owner_pick and _OWNER_PICK_RE.match(candidate):
             print(
-                f"ossemble name: '{candidate}' is not one lowercase word of letters and digits",
+                f"ossemble name: '{candidate}' breaks the one-word rule; screened as an owner pick",
                 file=sys.stderr,
             )
-            return 1
+            continue
+        hint = "" if owner_pick else "; if the owner picked it, rerun with --owner-pick"
+        print(
+            f"ossemble name: '{candidate}' is not one lowercase word of letters and digits{hint}",
+            file=sys.stderr,
+        )
+        return 1
 
     use_gh = shutil.which("gh") is not None
     results = sorted(

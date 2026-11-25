@@ -546,3 +546,33 @@ def test_check_github_repo_falls_back_to_a_plain_request_when_gh_is_unavailable(
 def test_check_github_repo_without_gh_reports_error_on_a_non_200_response(monkeypatch) -> None:
     monkeypatch.setattr(name, "_fetch", lambda url: (503, b""))
     assert name._check_github_repo("ossemble", use_gh=False) == "error"
+
+
+@pytest.mark.parametrize("candidate", ["mission-status", "30k-feet"])
+def test_run_screens_an_owner_pick_that_breaks_the_one_word_rule(candidate, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(name.shutil, "which", lambda _tool: None)
+    monkeypatch.setattr(
+        name, "_screen", lambda c, use_gh: {"candidate": c, "status": "free", "free": True, "checks": {}}
+    )
+    exit_code = name.run(argparse.Namespace(candidates=[candidate], json=False, owner_pick=True))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "screened as an owner pick" in captured.err
+    assert candidate in captured.out
+
+
+@pytest.mark.parametrize("candidate", ["-status", "status-", "Mission-status", "mission_status"])
+def test_run_rejects_an_owner_pick_that_is_not_a_valid_package_name(candidate, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(name.shutil, "which", lambda _tool: None)
+    exit_code = name.run(argparse.Namespace(candidates=[candidate], json=False, owner_pick=True))
+
+    assert exit_code == 1
+    assert "is not one lowercase word" in capsys.readouterr().err
+
+
+def test_run_names_the_owner_pick_route_when_a_name_breaks_the_rule(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(name.shutil, "which", lambda _tool: None)
+    name.run(argparse.Namespace(candidates=["mission-status"], json=False))
+
+    assert "rerun with --owner-pick" in capsys.readouterr().err
