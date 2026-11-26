@@ -1,7 +1,7 @@
 # State
 
-`.ossemble/state.json`, gitignored, holds only what the repo itself
-cannot answer: the scope sentence, the chosen distribution shape, opt-
+`.ossemble/state.json`, committed and holding nothing private (CI reads
+its opt-ins), holds only what the repo itself cannot answer: the scope sentence, the chosen distribution shape, opt-
 ins, the prior-art outcome, owner-approved outward-facing steps,
 temporarily lowered gates, the audit findings ledger, and a cache of
 expensive model checks keyed to a commit and a file hash. `resume`

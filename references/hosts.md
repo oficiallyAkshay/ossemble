@@ -52,4 +52,4 @@ Verified by a scout, 2026-09-19, and used by `references/build-runbook.md` step 
 
 ## Multi-sitting state
 
-There is no single canonical pattern for resuming a multi-sitting build across the ecosystem. A local, git-ignored state file is the common shape; a tracking issue with a checklist is the alternative some projects use instead. ossemble uses the state file (`.ossemble/state.json`, described in `references/contract.md` section 6) because it can be read back by a script without hitting the network, which a tracking issue cannot. (PRC-005)
+There is no single canonical pattern for resuming a multi-sitting build across the ecosystem. A local state file is the common shape; a tracking issue with a checklist is the alternative some projects use instead. ossemble uses the state file (`.ossemble/state.json`, described in `references/contract.md` section 6) because it can be read back by a script without hitting the network, which a tracking issue cannot. (PRC-005)

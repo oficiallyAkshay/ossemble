@@ -245,7 +245,7 @@ Everything from step 1 collapses into one ask: confirm the scope, pick a prior-a
 
 Who decides: orchestrator alone, no subagents.
 
-Create the repo, set the repo-local no-reply git identity (before any commit, including the orchestrator's own) (PRV-001), write `references/contract.md` (the rules schema, template manifest and agent output shapes, fixed before any builder starts), write `.ossemble/state.json` (gitignored) with the scope, shape, opt-ins and prior-art outcome from the one question, and stamp the boot template set:
+Create the repo, set the repo-local no-reply git identity (before any commit, including the orchestrator's own) (PRV-001), write `references/contract.md` (the rules schema, template manifest and agent output shapes, fixed before any builder starts), write `.ossemble/state.json` (committed, so it holds nothing private) with the scope, shape, opt-ins and prior-art outcome from the one question, and stamp the boot template set:
 
 ```
 python3 scripts/ossemble scaffold --set boot --var NAME=<name> --var OWNER=<owner>
@@ -393,4 +393,4 @@ ossemble registers the repo itself rather than only handing over a list. Always:
 
 Who decides: the owner.
 
-One checklist of every owner-only step deferred from steps 10, 12 and 13. (PRC-009) Record what was learned and what was refused, so neither is re-proposed next time. Delete `.ossemble/state.json` and leave the repo; a repo is done, not maintained.
+One checklist of every owner-only step deferred from steps 10, 12 and 13. (PRC-009) Record what was learned and what was refused, so neither is re-proposed next time. Remove every key of `.ossemble/state.json` except `optins`, which the token check reads in CI (delete the file when there are no opt-ins), and leave the repo; a repo is done, not maintained.
