@@ -707,9 +707,7 @@ def test_run_keeps_the_state_and_writes_the_baseline_when_optins_is_a_list(
     lowered = [{"gate": "coverage", "from": 100, "to": 70, "why": "still building"}]
     state_dir = tmp_path / ".ossemble"
     state_dir.mkdir()
-    (state_dir / "state.json").write_text(
-        json.dumps({"optins": ["NPM_TOKEN"], "lowered": lowered})
-    )
+    (state_dir / "state.json").write_text(json.dumps({"optins": ["NPM_TOKEN"], "lowered": lowered}))
 
     exit_code = resume.run(argparse.Namespace(path=str(tmp_path), json=False))
 
