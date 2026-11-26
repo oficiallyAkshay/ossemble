@@ -659,7 +659,7 @@
   },
   {
     "id": "PRC-014",
-    "text": "Delete `.ossemble/state.json` once the repo is done, since a finished repo has no live process attached.",
+    "text": "Once the repo is done, remove every key of `.ossemble/state.json` except `optins` (delete the file when there are none), since a finished repo has no live process attached and CI reads the opt-ins.",
     "basis": "the owner's rule that a finished repo has no live process attached",
     "category": "process",
     "kind": "default",

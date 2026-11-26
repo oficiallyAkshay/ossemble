@@ -94,7 +94,7 @@ The stage is read from the repo, never stored: a repo is in the finish stage whe
 
 ## 6. State
 
-One file in the target repo, `.ossemble/state.json`, ignored by git. It holds only what cannot be read back from the repo. When state and repo disagree, the repo wins.
+One file in the target repo, `.ossemble/state.json`, committed so CI can read its opt-ins, and holding nothing private. It holds only what cannot be read back from the repo. When state and repo disagree, the repo wins.
 
 | Key | Holds |
 |---|---|
