@@ -21,21 +21,12 @@ if TYPE_CHECKING:
 
 try:
     from . import _git
+    from .resume import ALLOWED_STATE_KEYS
 except ImportError:
     import _git
+    from resume import ALLOWED_STATE_KEYS
 
 _CacheT = TypeVar("_CacheT")
-
-ALLOWED_STATE_KEYS = {
-    "scope",
-    "shapes",
-    "optins",
-    "prior_art",
-    "gos",
-    "lowered",
-    "findings",
-    "checks",
-}
 
 LOCKFILE_NAMES = (
     "uv.lock",
