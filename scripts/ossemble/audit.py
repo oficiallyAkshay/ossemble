@@ -135,9 +135,10 @@ def _score(
 
     `unverified` names the rule ids whose probe could not reach a verdict
     this run, meaning it depends on `--api` data an unauthenticated or
-    missing `gh` never supplied. Never a gap by itself: a probe that finds
-    itself unverified records that in `facts["unverified_probes"]` (by
-    its own function name) rather than returning a row.
+    missing `gh` never supplied. Never a gap by itself: a failed `gh` read
+    or a probe that finds itself unverified records that in
+    `facts["unverified_probes"]` (by probe function name), and those
+    probes are skipped rather than scored.
     """
     _validate_rules(rules)
     gaps: list[dict[str, str]] = []
@@ -157,6 +158,8 @@ def _score(
         probe = PROBES.get(probe_name)
         if probe is None:
             raise _RuleError(f"rule {rule.get('id')} names an unknown probe {probe_name!r}")
+        if probe_name in facts.get("unverified_probes", ()):
+            continue
 
         try:
             result = probe(root, facts)
@@ -293,21 +296,39 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
     if use_api:
         owner_repo = _remote_owner_repo(root)
         if owner_repo:
+            # A read that fails or times out leaves its probes unverified,
+            # never scored against an empty value as a gap.
             try:
                 repo_settings = cast("dict", _gh_api(f"repos/{owner_repo}"))
                 facts["repo_settings"] = repo_settings
                 facts["public"] = not bool(repo_settings.get("private", True))
+            except _GH_READ_ERRORS:
+                facts["unverified_probes"] = {*_SETTINGS_PROBES, *_RULESET_PROBES}
+                return facts
+            try:
                 rulesets = cast("list", _gh_api(f"repos/{owner_repo}/rulesets") or [])
                 for candidate in rulesets:
                     if candidate.get("name") == "main":
                         facts["ruleset"] = _gh_api(f"repos/{owner_repo}/rulesets/{candidate['id']}")
                         break
+            except _GH_READ_ERRORS:
+                facts["unverified_probes"] = set(_RULESET_PROBES)
+            try:
                 facts["automated_security_fixes"] = cast(
                     "dict", _gh_api(f"repos/{owner_repo}/automated-security-fixes")
                 )
-            except (RuntimeError, OSError, json.JSONDecodeError, KeyError):
-                pass
+            except _GH_READ_ERRORS:
+                pass  # only a fallback: the probe then reads the repo settings alone
     return facts
+
+
+_GH_READ_ERRORS = (
+    RuntimeError,
+    OSError,
+    json.JSONDecodeError,
+    KeyError,
+    subprocess.TimeoutExpired,
+)
 
 
 _PYTHON_MARKER_NAMES = ("pyproject.toml", "setup.py", "setup.cfg")
@@ -1360,6 +1381,27 @@ def ruleset_never_requires_reviews_or_thread_resolution(_root: Path, facts: dict
                 return ("gh api rulesets", "the main ruleset requires up-to-date branches")
     return None
 
+
+_SETTINGS_PROBES = tuple(
+    function.__name__
+    for function in (
+        auto_merge_and_delete_branch_enabled,
+        merge_strategy_is_rebase_only,
+        wiki_and_projects_disabled,
+        dependabot_alerts_and_security_updates_enabled,
+        topics_are_set,
+        secret_scanning_and_push_protection_enabled,
+        copilot_autofix_for_codeql_enabled,
+    )
+)
+_RULESET_PROBES = tuple(
+    function.__name__
+    for function in (
+        ruleset_requires_ci_check,
+        ruleset_blocks_history_rewrites,
+        ruleset_never_requires_reviews_or_thread_resolution,
+    )
+)
 
 PROBES = {
     function.__name__: function

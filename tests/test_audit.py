@@ -528,6 +528,89 @@ def test_gaps_never_includes_an_unverified_probes_marker(tmp_path, monkeypatch) 
     assert rows == []
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError("HTTP 403: Forbidden"),
+        subprocess.TimeoutExpired(["gh", "api"], 30),
+    ],
+    ids=["refused", "timed-out"],
+)
+def test_run_with_api_lists_every_api_rule_as_unverified_when_the_github_read_fails(
+    tmp_path, capsys, monkeypatch, error
+) -> None:
+    """A failed or slow GitHub read never turns an unread setting into a gap."""
+    init_git_repo(tmp_path)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def fake_gh_api(path):
+        raise error
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+    api_ids = sorted(rule["id"] for rule in audit._load_rules() if rule.get("check") == "api")
+
+    audit.run(argparse.Namespace(path=str(tmp_path), as_json=True, api=True))
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["unverified"] == api_ids
+    assert not {row["id"] for row in report["gaps"]} & set(api_ids)
+
+
+def test_run_with_api_keeps_a_ruleset_that_was_read_but_is_absent_as_a_gap(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    init_git_repo(tmp_path)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def fake_gh_api(path):
+        if path == "repos/an-owner/a-repo":
+            return {"private": True}
+        if path == "repos/an-owner/a-repo/rulesets":
+            return []
+        return {"enabled": True, "paused": False}
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+
+    audit.run(argparse.Namespace(path=str(tmp_path), as_json=True, api=True))
+
+    report = json.loads(capsys.readouterr().out)
+    assert "CI-001" in {row["id"] for row in report["gaps"]}
+    assert report["unverified"] == []
+
+
+def test_gather_facts_marks_only_the_ruleset_probes_unverified_when_the_ruleset_read_fails(
+    tmp_path, monkeypatch
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/an-owner/a-repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def fake_gh_api(path):
+        if path == "repos/an-owner/a-repo":
+            return {"private": True}
+        if path == "repos/an-owner/a-repo/rulesets":
+            raise RuntimeError("HTTP 403: Forbidden")
+        return {"enabled": True, "paused": False}
+
+    monkeypatch.setattr(audit, "_gh_api", fake_gh_api)
+
+    result = audit._gather_facts(tmp_path, use_api=True)
+
+    assert result["repo_settings"] == {"private": True}
+    assert result["unverified_probes"] == set(audit._RULESET_PROBES)
+
+
 def test_run_reads_rules_from_ossemble_not_the_target_even_without_a_rules_dir(
     tmp_path, capsys
 ) -> None:
