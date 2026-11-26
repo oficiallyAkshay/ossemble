@@ -37,8 +37,11 @@ except ImportError:
 _TOOLS = ("git", "gh", "uv")
 _NOREPLY_SUFFIX = "@users.noreply.github.com"
 _STATE_RELATIVE_PATH = ".ossemble/state.json"
-_LIST_KEYS = ("shapes", "gos", "lowered", "findings")
-_DICT_KEYS = ("scope", "optins", "prior_art", "checks")
+ALLOWED_STATE_KEYS = frozenset(
+    {"scope", "shapes", "optins", "prior_art", "gos", "lowered", "findings", "checks"}
+)
+_LIST_KEYS = ("lowered",)
+_DICT_KEYS = ("checks",)
 _FINISH_COVERAGE_FLOOR = 100
 
 
@@ -139,7 +142,8 @@ def _read_state(path: Path) -> tuple[dict, str | None]:
         + [key for key in _DICT_KEYS if key in data and not isinstance(data[key], dict)]
     )
     if problems:
-        return {}, f"{_STATE_RELATIVE_PATH} has the wrong shape for: {', '.join(problems)}"
+        kept = {key: value for key, value in data.items() if key not in problems}
+        return kept, f"{_STATE_RELATIVE_PATH} has the wrong shape for: {', '.join(problems)}"
     return data, None
 
 

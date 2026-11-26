@@ -233,7 +233,7 @@ def test_read_state_reports_fields_with_the_wrong_shape(tmp_path) -> None:
     state_dir = tmp_path / ".ossemble"
     state_dir.mkdir()
     (state_dir / "state.json").write_text(
-        json.dumps({"lowered": {"not": "a list"}, "scope": ["not", "a", "dict"]})
+        json.dumps({"lowered": {"not": "a list"}, "checks": ["not", "a", "dict"]})
     )
 
     state, error = resume._read_state(tmp_path)
@@ -241,7 +241,7 @@ def test_read_state_reports_fields_with_the_wrong_shape(tmp_path) -> None:
     assert state == {}
     assert error is not None
     assert "lowered" in error
-    assert "scope" in error
+    assert "checks" in error
 
 
 def test_read_state_accepts_a_correctly_shaped_state_file(tmp_path) -> None:
@@ -695,3 +695,45 @@ def test_run_reports_a_regression_on_a_second_run_when_a_new_gap_appears(
     exit_code = resume.run(argparse.Namespace(path=str(tmp_path), json=False))
     assert "regressions: none" in capsys.readouterr().out
     assert exit_code == 0
+
+
+def test_run_keeps_the_state_and_writes_the_baseline_when_optins_is_a_list(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _all_tools_present(monkeypatch)
+    _fake_git_config(monkeypatch, "1+owner@users.noreply.github.com\n")
+    _write_pyproject(tmp_path, 100)
+    _stub_audit(monkeypatch, tmp_path, ["CI-001"])
+    lowered = [{"gate": "coverage", "from": 100, "to": 70, "why": "still building"}]
+    state_dir = tmp_path / ".ossemble"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text(
+        json.dumps({"optins": ["NPM_TOKEN"], "lowered": lowered})
+    )
+
+    exit_code = resume.run(argparse.Namespace(path=str(tmp_path), json=False))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "lowered: coverage (100 -> 70): still building" in captured.out
+    assert "raise the lowered gate(s) (coverage)" in captured.out
+    state = json.loads((state_dir / "state.json").read_text())
+    assert state["checks"]["audit"]["gaps"] == ["CI-001"]
+    assert state["optins"] == ["NPM_TOKEN"]
+    assert state["lowered"] == lowered
+
+
+def test_read_state_keeps_the_keys_that_are_fine_when_one_it_reads_has_the_wrong_shape(
+    tmp_path,
+) -> None:
+    state_dir = tmp_path / ".ossemble"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text(
+        json.dumps({"lowered": {"not": "a list"}, "optins": ["NPM_TOKEN"], "gos": ["x"]})
+    )
+
+    state, error = resume._read_state(tmp_path)
+
+    assert state == {"optins": ["NPM_TOKEN"], "gos": ["x"]}
+    assert error is not None
+    assert "lowered" in error
