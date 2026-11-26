@@ -5,6 +5,7 @@ A probe returns `None` when its rule holds, else an `(file, message)` gap.
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import json
 import re
@@ -313,12 +314,11 @@ def _gather_facts(root: Path, *, use_api: bool) -> dict:
                         break
             except _GH_READ_ERRORS:
                 facts["unverified_probes"] = set(_RULESET_PROBES)
-            try:
+            # Only a fallback: when it fails the probe reads the repo settings alone.
+            with contextlib.suppress(*_GH_READ_ERRORS):
                 facts["automated_security_fixes"] = cast(
                     "dict", _gh_api(f"repos/{owner_repo}/automated-security-fixes")
                 )
-            except _GH_READ_ERRORS:
-                pass  # only a fallback: the probe then reads the repo settings alone
     return facts
 
 
