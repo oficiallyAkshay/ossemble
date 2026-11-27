@@ -174,7 +174,7 @@ Builds a repo from a need. Read `references/contract.md` first: it names every p
 +------------------------------------------------------------+
 | 14 STOP  [YOU]                                                |
 |   one owner checklist (Marketplace tick, agreements,          |
-|   passkeys), learnings, no-list, delete state, leave           |
+|   passkeys), learnings, no-list, keep only optins, leave       |
 +------------------------------------------------------------+
 ```
 
